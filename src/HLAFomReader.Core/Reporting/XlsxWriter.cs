@@ -11,13 +11,54 @@ namespace HLAFomReader.Core.Reporting;
 /// <param name="Text">Inline string content. Null for a numeric or empty cell.</param>
 /// <param name="Number">Numeric content, written so Excel can sort and total it. Null for text.</param>
 /// <param name="Bold">True to apply the workbook's single bold style.</param>
-public readonly record struct XlsxCell(string? Text, double? Number, bool Bold)
+/// <param name="TopAligned">
+/// True to pin the content to the top of its cell. Only tells against a cell merged down a block
+/// of rows, which is the case it exists for.
+/// </param>
+/// <param name="WhiteFill">
+/// True to paint the cell white outright rather than leaving it unfilled. Not the same thing: an
+/// unfilled cell has no colour of its own and takes whatever the reader's Excel paints behind it,
+/// which is dark under Office's dark theme.
+/// </param>
+/// <param name="Unruled">
+/// True to leave the cell without a border, so it reads as open page rather than an empty box.
+/// </param>
+public readonly record struct XlsxCell(
+    string? Text, double? Number, bool Bold,
+    bool TopAligned = false, bool WhiteFill = false, bool Unruled = false)
 {
     /// <summary>True when the cell should be left out of the sheet entirely.</summary>
     public bool IsEmpty => Text is null && Number is null;
 
-    /// <summary>A cell that is not written at all — the blanks in a hierarchy staircase.</summary>
+    /// <summary>A cell with nothing in it, left unfilled.</summary>
     public static XlsxCell Empty => default;
+
+    /// <summary>
+    /// A cell with nothing in it, painted white and still ruled.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// "No fill" and "white" look identical on a default worksheet and are not the same thing. An
+    /// unfilled cell has no colour of its own, so it shows whatever is behind it — and under
+    /// Office's own dark theme that is a dark grey, which turns the empty half of a staircase into
+    /// a dark field with the occupied cells punched out of it. Painting them makes the page white
+    /// wherever the reader has set their Excel.
+    /// </para>
+    /// <para>
+    /// Keeps its border because this is the blank that lies <em>under</em> a merged block. Excel
+    /// draws a merged range's outline out of the borders of the cells it covers, so dropping the
+    /// border here would open the bottom of every block that spans more than its own row.
+    /// </para>
+    /// </remarks>
+    public static XlsxCell Paper => new(null, null, false, WhiteFill: true);
+
+    /// <summary>A cell with nothing in it, painted white and left unruled: open page.</summary>
+    /// <remarks>
+    /// For blanks that belong to no block at all, where a border would draw an empty box around
+    /// nothing. Distinct from <see cref="Paper"/> only in that; the two are not interchangeable,
+    /// and using this one under a merge breaks the block's outline.
+    /// </remarks>
+    public static XlsxCell Open => new(null, null, false, WhiteFill: true, Unruled: true);
 
     /// <summary>A text cell. Null or empty text collapses to <see cref="Empty"/>.</summary>
     public static XlsxCell Str(string? value) =>
@@ -26,8 +67,69 @@ public readonly record struct XlsxCell(string? Text, double? Number, bool Bold)
     /// <summary>A bold text cell, used for the header row.</summary>
     public static XlsxCell Head(string value) => new(value, null, true);
 
+    /// <summary>
+    /// A text cell that sits at the top of whatever space it is given — what the anchor of a
+    /// merged block needs.
+    /// </summary>
+    /// <remarks>
+    /// Excel aligns to the bottom of a cell unless told otherwise, so a class name merged down the
+    /// twenty rows of its subtree would print twenty rows beneath the class it names, level with
+    /// the last of its descendants. The facts about that class are on the block's first row, so the
+    /// name belongs there too.
+    /// </remarks>
+    public static XlsxCell Node(string? value) =>
+        string.IsNullOrEmpty(value) ? default : new XlsxCell(value, null, false, TopAligned: true);
+
     /// <summary>A numeric cell.</summary>
     public static XlsxCell Num(double value) => new(null, value, false);
+}
+
+/// <summary>
+/// One block of cells joined into a single cell, in Excel's own 1-based coordinates — row 1 is the
+/// first row of the sheet, column 1 is A.
+/// </summary>
+/// <remarks>
+/// Only the top-left cell of a block carries content. Anything written into the rest is kept in the
+/// file but never shown, so the writer simply leaves those cells out.
+/// </remarks>
+/// <param name="FirstRow">Topmost row of the block.</param>
+/// <param name="FirstColumn">Leftmost column of the block.</param>
+/// <param name="LastRow">Bottom row of the block.</param>
+/// <param name="LastColumn">Rightmost column of the block.</param>
+public readonly record struct XlsxMerge(int FirstRow, int FirstColumn, int LastRow, int LastColumn)
+{
+    /// <summary>The range written the way Excel refers to it, such as <c>A2:A17</c>.</summary>
+    public string Reference =>
+        XlsxWriter.ColumnName(FirstColumn) + FirstRow.ToString(CultureInfo.InvariantCulture)
+        + ":" + XlsxWriter.ColumnName(LastColumn) + LastRow.ToString(CultureInfo.InvariantCulture);
+}
+
+/// <summary>
+/// The colours a workbook is painted with, so an export can follow whatever theme the app is
+/// wearing.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Only the header band and the grid are themed. The body is left on Excel's own white with black
+/// text, which is not an oversight: a sheet is read and printed as often as it is looked at on
+/// screen, and a dark fill behind every cell costs ink and readability without telling anyone
+/// anything. The header carries the theme; the rows carry the data.
+/// </para>
+/// <para>
+/// Each colour is <c>AARRGGBB</c> hex, with or without a leading <c>#</c>. Anything unparseable
+/// falls back rather than throwing — a mistyped colour should not cost somebody their export.
+/// </para>
+/// </remarks>
+/// <param name="HeaderFill">Background of the header row.</param>
+/// <param name="HeaderText">Text colour of the header row, which has to read against the fill.</param>
+/// <param name="GridLine">Colour of the cell borders.</param>
+public sealed record XlsxPalette(string HeaderFill, string HeaderText, string GridLine)
+{
+    /// <summary>
+    /// What a caller that says nothing gets: the light theme's chrome, which reads on the white a
+    /// spreadsheet starts as.
+    /// </summary>
+    public static XlsxPalette Default { get; } = new("FFEBEFF4", "FF1B2430", "FFC3CDD9");
 }
 
 /// <summary>One worksheet — the "tab" a reader sees along the bottom of the workbook.</summary>
@@ -51,6 +153,12 @@ public sealed class XlsxSheet
 
     /// <summary>Rows held still when the sheet scrolls. 1 keeps the header visible; 0 freezes nothing.</summary>
     public int FrozenRows { get; set; } = 1;
+
+    /// <summary>
+    /// Blocks of cells to join, in the order they should be written. Overlapping blocks make a file
+    /// Excel reports as damaged, so callers are responsible for keeping them apart.
+    /// </summary>
+    public List<XlsxMerge> Merges { get; } = new();
 }
 
 /// <summary>
@@ -94,22 +202,28 @@ public static class XlsxWriter
     private const string Declaration = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>";
 
     /// <summary>Writes <paramref name="sheets"/> to <paramref name="path"/>, replacing any existing file.</summary>
-    /// <exception cref="ArgumentNullException">Either argument is null.</exception>
+    /// <param name="path">Destination file.</param>
+    /// <param name="sheets">Sheets to write, in tab order.</param>
+    /// <param name="palette">Colours for the header and grid. Null takes <see cref="XlsxPalette.Default"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> or <paramref name="sheets"/> is null.</exception>
     /// <exception cref="ArgumentException"><paramref name="sheets"/> is empty — a workbook needs a sheet.</exception>
     /// <exception cref="IOException">The file could not be written.</exception>
-    public static void Write(string path, IReadOnlyList<XlsxSheet> sheets)
+    public static void Write(string path, IReadOnlyList<XlsxSheet> sheets, XlsxPalette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(sheets);
 
         using var file = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
-        Write(file, sheets);
+        Write(file, sheets, palette);
     }
 
     /// <summary>Writes <paramref name="sheets"/> into <paramref name="stream"/>, which is left open.</summary>
-    /// <exception cref="ArgumentNullException">Either argument is null.</exception>
+    /// <param name="stream">Destination stream, left open.</param>
+    /// <param name="sheets">Sheets to write, in tab order.</param>
+    /// <param name="palette">Colours for the header and grid. Null takes <see cref="XlsxPalette.Default"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> or <paramref name="sheets"/> is null.</exception>
     /// <exception cref="ArgumentException"><paramref name="sheets"/> is empty.</exception>
-    public static void Write(Stream stream, IReadOnlyList<XlsxSheet> sheets)
+    public static void Write(Stream stream, IReadOnlyList<XlsxSheet> sheets, XlsxPalette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(sheets);
@@ -125,7 +239,7 @@ public static class XlsxWriter
         AddEntry(zip, "_rels/.rels", RootRelationships());
         AddEntry(zip, "xl/workbook.xml", Workbook(names));
         AddEntry(zip, "xl/_rels/workbook.xml.rels", WorkbookRelationships(sheets.Count));
-        AddEntry(zip, "xl/styles.xml", Styles());
+        AddEntry(zip, "xl/styles.xml", Styles(palette ?? XlsxPalette.Default));
 
         for (var i = 0; i < sheets.Count; i++)
             AddEntry(zip, "xl/worksheets/sheet" + (i + 1).ToString(CultureInfo.InvariantCulture) + ".xml", Worksheet(sheets[i]));
@@ -203,28 +317,103 @@ public static class XlsxWriter
                       .Append("</Relationships>").ToString();
     }
 
+    /// <summary>Cell format indices, which are positions in the <c>cellXfs</c> list below.</summary>
+    private const string BodyStyle = "0";
+    private const string HeaderStyle = "1";
+    private const string NodeStyle = "2";
+    private const string PaperStyle = "3";
+    private const string OpenStyle = "4";
+
     /// <summary>
-    /// The smallest style sheet Excel accepts, carrying two cell formats: 0 plain and 1 bold.
-    /// Colours are given as explicit RGB rather than theme references, because no theme part is
-    /// written and a dangling theme reference makes Excel report the file as damaged.
+    /// The smallest style sheet Excel accepts that can still carry a themed header and a grid.
     /// </summary>
-    private static string Styles() =>
+    /// <remarks>
+    /// <para>
+    /// Three cell formats: 0 body, 1 header, 2 body pinned to the top of its cell. All three take
+    /// the same thin border, because every cell in the used range is written — that is what draws
+    /// the grid, and a cell left out would leave a hole in it.
+    /// </para>
+    /// <para>
+    /// The first two fills must be <c>none</c> and <c>gray125</c> in that order however little use
+    /// they are; Excel assumes the pair and misreads every later index without them. Borders are
+    /// the same story, index 0 being the empty one. Colours are explicit RGB rather than theme
+    /// references, because no theme part is written and a dangling theme reference makes Excel
+    /// report the file as damaged.
+    /// </para>
+    /// </remarks>
+    private static string Styles(XlsxPalette palette) =>
         Declaration
         + "<styleSheet xmlns=\"" + MainNs + "\">"
         + "<fonts count=\"2\">"
         + "<font><sz val=\"11\"/><color rgb=\"FF000000\"/><name val=\"Calibri\"/><family val=\"2\"/></font>"
-        + "<font><b/><sz val=\"11\"/><color rgb=\"FF000000\"/><name val=\"Calibri\"/><family val=\"2\"/></font>"
+        + "<font><b/><sz val=\"11\"/><color rgb=\"" + Argb(palette.HeaderText, XlsxPalette.Default.HeaderText)
+        + "\"/><name val=\"Calibri\"/><family val=\"2\"/></font>"
         + "</fonts>"
-        + "<fills count=\"2\"><fill><patternFill patternType=\"none\"/></fill>"
-        + "<fill><patternFill patternType=\"gray125\"/></fill></fills>"
-        + "<borders count=\"1\"><border><left/><right/><top/><bottom/><diagonal/></border></borders>"
+        + "<fills count=\"4\">"
+        + "<fill><patternFill patternType=\"none\"/></fill>"
+        + "<fill><patternFill patternType=\"gray125\"/></fill>"
+        + "<fill><patternFill patternType=\"solid\"><fgColor rgb=\""
+        + Argb(palette.HeaderFill, XlsxPalette.Default.HeaderFill)
+        + "\"/><bgColor indexed=\"64\"/></patternFill></fill>"
+        + "<fill><patternFill patternType=\"solid\"><fgColor rgb=\"FFFFFFFF\"/>"
+        + "<bgColor indexed=\"64\"/></patternFill></fill>"
+        + "</fills>"
+        + "<borders count=\"2\">"
+        + "<border><left/><right/><top/><bottom/><diagonal/></border>"
+        + Thin(Argb(palette.GridLine, XlsxPalette.Default.GridLine))
+        + "</borders>"
         + "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>"
-        + "<cellXfs count=\"2\">"
-        + "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>"
-        + "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>"
+        + "<cellXfs count=\"5\">"
+        + "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyBorder=\"1\"/>"
+        + "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"2\" borderId=\"1\" xfId=\"0\""
+        + " applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\"/>"
+        + "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\""
+        + " applyBorder=\"1\" applyAlignment=\"1\"><alignment vertical=\"top\"/></xf>"
+        + "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"3\" borderId=\"1\" xfId=\"0\""
+        + " applyFill=\"1\" applyBorder=\"1\"/>"
+        + "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"3\" borderId=\"0\" xfId=\"0\""
+        + " applyFill=\"1\" applyBorder=\"1\"/>"
         + "</cellXfs>"
         + "<cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles>"
         + "</styleSheet>";
+
+    /// <summary>A thin border on all four sides in one colour. Child order is fixed by the schema.</summary>
+    private static string Thin(string rgb)
+    {
+        var side = "<color rgb=\"" + rgb + "\"/>";
+
+        return "<border>"
+             + "<left style=\"thin\">" + side + "</left>"
+             + "<right style=\"thin\">" + side + "</right>"
+             + "<top style=\"thin\">" + side + "</top>"
+             + "<bottom style=\"thin\">" + side + "</bottom>"
+             + "<diagonal/></border>";
+    }
+
+    /// <summary>
+    /// Normalises a colour to the eight hex digits Excel wants, falling back when it cannot.
+    /// </summary>
+    /// <remarks>
+    /// Accepts <c>#AARRGGBB</c>, <c>AARRGGBB</c>, <c>#RRGGBB</c> and <c>RRGGBB</c>, taking a
+    /// missing alpha as opaque. A colour that survives none of that is replaced rather than written
+    /// through: one bad character in a palette would otherwise produce a workbook Excel refuses to
+    /// open at all, which is a poor trade for a shade nobody would have noticed.
+    /// </remarks>
+    private static string Argb(string? value, string fallback)
+    {
+        var text = value?.TrimStart('#');
+
+        if (text is null || (text.Length != 6 && text.Length != 8))
+            return fallback;
+
+        foreach (var c in text)
+        {
+            var hex = c is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F';
+            if (!hex) return fallback;
+        }
+
+        return (text.Length == 6 ? "FF" + text : text).ToUpperInvariant();
+    }
 
     private static string Worksheet(XlsxSheet sheet)
     {
@@ -255,40 +444,72 @@ public static class XlsxWriter
             builder.Append("</cols>");
         }
 
+        // Every row is written out to the width of the widest, so the grid is a rectangle. A row
+        // that stopped at its last value would leave the border trailing off mid-sheet.
+        var width = 0;
+        foreach (var row in sheet.Rows)
+            width = Math.Max(width, row.Count);
+
         builder.Append("<sheetData>");
         for (var r = 0; r < sheet.Rows.Count; r++)
-            AppendRow(builder, sheet.Rows[r], r + 1);
+            AppendRow(builder, sheet.Rows[r], r + 1, width);
         builder.Append("</sheetData>");
+
+        // Schema order again: mergeCells follows sheetData, and Excel refuses the file outright if
+        // it comes before.
+        if (sheet.Merges.Count > 0)
+        {
+            builder.Append("<mergeCells count=\"")
+                   .Append(sheet.Merges.Count.ToString(CultureInfo.InvariantCulture)).Append("\">");
+
+            foreach (var merge in sheet.Merges)
+                builder.Append("<mergeCell ref=\"").Append(merge.Reference).Append("\"/>");
+
+            builder.Append("</mergeCells>");
+        }
 
         return builder.Append("</worksheet>").ToString();
     }
 
-    private static void AppendRow(StringBuilder builder, IReadOnlyList<XlsxCell> cells, int rowNumber)
+    /// <summary>
+    /// Writes one row out to <paramref name="width"/> columns, blanks included.
+    /// </summary>
+    /// <remarks>
+    /// Empty cells used to be left out entirely, which made a wide staircase cheap — most of it is
+    /// nothing at all. They are written now because a border belongs to a cell: skip the cell and
+    /// the grid loses that square, leaving the blank half of every staircase row unruled. Writing
+    /// them back costs an eight-byte element each and buys a grid with no holes in it, and these
+    /// workbooks are hundreds of rows rather than millions.
+    /// </remarks>
+    private static void AppendRow(StringBuilder builder, IReadOnlyList<XlsxCell> cells, int rowNumber, int width)
     {
         var row = rowNumber.ToString(CultureInfo.InvariantCulture);
         builder.Append("<row r=\"").Append(row).Append("\">");
 
-        for (var c = 0; c < cells.Count; c++)
+        for (var c = 0; c < width; c++)
         {
-            var cell = cells[c];
-
-            // Empty cells are left out rather than written blank. That is what makes the hierarchy
-            // staircase cheap: most of a wide sheet is nothing at all.
-            if (cell.IsEmpty) continue;
-
+            var cell = c < cells.Count ? cells[c] : XlsxCell.Empty;
             var reference = ColumnName(c + 1) + row;
-            var style = cell.Bold ? " s=\"1\"" : "";
+
+            if (cell.IsEmpty)
+            {
+                var blank = cell.Unruled ? OpenStyle : cell.WhiteFill ? PaperStyle : BodyStyle;
+                builder.Append("<c r=\"").Append(reference).Append("\" s=\"").Append(blank).Append("\"/>");
+                continue;
+            }
+
+            var style = cell.Bold ? HeaderStyle : cell.TopAligned ? NodeStyle : BodyStyle;
 
             if (cell.Number is { } number)
             {
-                builder.Append("<c r=\"").Append(reference).Append('"').Append(style).Append("><v>")
+                builder.Append("<c r=\"").Append(reference).Append("\" s=\"").Append(style).Append("\"><v>")
                        .Append(number.ToString("R", CultureInfo.InvariantCulture))
                        .Append("</v></c>");
                 continue;
             }
 
-            builder.Append("<c r=\"").Append(reference).Append('"').Append(style)
-                   .Append(" t=\"inlineStr\"><is><t xml:space=\"preserve\">")
+            builder.Append("<c r=\"").Append(reference).Append("\" s=\"").Append(style)
+                   .Append("\" t=\"inlineStr\"><is><t xml:space=\"preserve\">")
                    .Append(Escape(cell.Text!))
                    .Append("</t></is></c>");
         }

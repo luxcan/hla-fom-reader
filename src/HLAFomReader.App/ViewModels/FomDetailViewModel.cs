@@ -349,7 +349,9 @@ public sealed class FomDetailViewModel : ViewModelBase
 
         try
         {
-            ClassHierarchyExporter.Export(document, path);
+            // Painted in whichever theme is on screen, so the sheet and the app it came out of look
+            // like the same piece of work.
+            ClassHierarchyExporter.Export(document, path, ExportPalette.Current());
 
             var objects = document.ObjectClasses.Sum(c => c.DescendantsAndSelf().Count());
             var interactions = document.InteractionClasses.Sum(c => c.DescendantsAndSelf().Count());

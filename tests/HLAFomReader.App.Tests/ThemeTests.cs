@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -11,6 +11,7 @@ using HLAFomReader.App.Infrastructure;
 using HLAFomReader.App.ViewModels;
 using HLAFomReader.App.Views;
 using HLAFomReader.Core.Registry;
+using HLAFomReader.Core.Reporting;
 using Xunit;
 
 namespace HLAFomReader.App.Tests;
@@ -59,6 +60,68 @@ public sealed class ThemeTests
             var darkBackground = ((SolidColorBrush)dark["AppBackground"]!).Color;
             Assert.NotEqual(lightBackground, darkBackground);
         });
+    }
+
+    /// <summary>
+    /// The Excel export takes its colours from whichever theme is merged at the time.
+    /// </summary>
+    /// <remarks>
+    /// The failure this exists for is silent. <see cref="ExportPalette"/> looks its colours up by
+    /// key and falls back when there is no application to ask, so a key that got renamed — or was
+    /// never spelled right — does not throw and does not fail a build. It hands back the light
+    /// fallback for both directions, and the only symptom is a dark-theme export that comes out
+    /// light. Asserting the two differ is what catches that.
+    /// </remarks>
+    [Fact]
+    public void TheExportPaletteFollowsTheMergedTheme()
+    {
+        _wpf.Invoke(() =>
+        {
+            var startingTheme = ThemeManager.Current;
+
+            try
+            {
+                ThemeManager.Apply(AppTheme.Light, persist: false);
+                var light = ExportPalette.Current();
+
+                ThemeManager.Apply(AppTheme.Dark, persist: false);
+                var dark = ExportPalette.Current();
+
+                Assert.NotEqual(light.HeaderFill, dark.HeaderFill);
+                Assert.NotEqual(light.HeaderText, dark.HeaderText);
+                Assert.NotEqual(light.GridLine, dark.GridLine);
+
+                // Not the fallback in either direction: that is what a mistyped key looks like.
+                Assert.NotEqual(XlsxPalette.Default.HeaderFill, dark.HeaderFill);
+
+                // Eight hex digits, or the workbook is written with the fallback instead.
+                foreach (var colour in new[] { light.HeaderFill, light.HeaderText, light.GridLine,
+                                               dark.HeaderFill, dark.HeaderText, dark.GridLine })
+                {
+                    Assert.Matches("^[0-9A-F]{8}$", colour);
+                }
+
+                // A dark header needs light text on it and the reverse, or the band is unreadable.
+                Assert.True(Luminance(dark.HeaderFill) < Luminance(dark.HeaderText),
+                    "the dark theme's header text is no lighter than the fill behind it");
+                Assert.True(Luminance(light.HeaderFill) > Luminance(light.HeaderText),
+                    "the light theme's header text is no darker than the fill behind it");
+            }
+            finally
+            {
+                ThemeManager.Apply(startingTheme, persist: false);
+            }
+        });
+    }
+
+    /// <summary>Rough brightness of an <c>AARRGGBB</c> colour, enough to tell dark from light.</summary>
+    private static double Luminance(string argb)
+    {
+        var r = Convert.ToInt32(argb.Substring(2, 2), 16);
+        var g = Convert.ToInt32(argb.Substring(4, 2), 16);
+        var b = Convert.ToInt32(argb.Substring(6, 2), 16);
+
+        return (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
     }
 
     /// <summary>
