@@ -1,0 +1,379 @@
+<Window x:Class="HLAFomReader.App.Views.RegisterFomWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Register FOM"
+        Width="540" SizeToContent="Height"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AppBackground}"
+        Foreground="{DynamicResource TextPrimary}"
+        FontFamily="{StaticResource AppFontFamily}"
+        FontSize="{StaticResource FontSizeBody}"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <!-- ResizeBorderThickness is 0 because the dialog sizes itself to its content; the 36 DIP caption still drags. -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="36"
+                      ResizeBorderThickness="0"
+                      CornerRadius="0"
+                      GlassFrameThickness="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+
+        <!-- Same caption button as the shell: 44 DIP wide, close hover uses ValidationError. -->
+        <Style x:Key="CloseCaptionButton" TargetType="Button">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ValidationError}" />
+                                <Setter Property="Foreground" Value="#FFFFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- One of the two choices: a surface card so neither reads as the "small print" of the other. -->
+        <Style x:Key="ChoiceCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SurfaceAltBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Divider}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+            <Setter Property="Padding" Value="14,12" />
+        </Style>
+
+        <Style x:Key="ChoiceHeading" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+
+        <!-- Captions and file rows sit under the radio label, so they share its 24 DIP indent
+             (16 DIP box + the RadioButton's 8 DIP content padding). -->
+        <Style x:Key="ChoiceCaption" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="24,4,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+
+        <!-- Field caption above a box, matching the PasswordWindow idiom. -->
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+
+        <!-- BasedOn is load-bearing: a keyed style would otherwise drop the theme's TextBox chrome. -->
+        <Style x:Key="PathBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="IsReadOnlyCaretVisible" Value="False" />
+        </Style>
+
+        <Style x:Key="RowButton" TargetType="Button" BasedOn="{StaticResource SubtleButton}">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <!-- Quiet annotation under a file row: something the dialog did for the user. -->
+        <Style x:Key="RowNote" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,6,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBackground}" />
+        </Style>
+
+        <!-- Consequence of a choice the user is allowed to make; not an error. -->
+        <Style x:Key="RowWarning" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,6,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+
+        <Style x:Key="RowError" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,8,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource ValidationError}" />
+        </Style>
+
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="36" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Title bar ============ -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource TitleBarBackground}"
+                BorderBrush="{DynamicResource Divider}"
+                BorderThickness="0,0,0,1">
+            <DockPanel LastChildFill="True">
+
+                <Button DockPanel.Dock="Right" Style="{StaticResource CloseCaptionButton}"
+                        Click="Close_Click" ToolTip="Close" AutomationProperties.Name="Close">
+                    <Path Data="M 0,0 L 10,10 M 10,0 L 0,10" StrokeThickness="1"
+                          Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" />
+                </Button>
+
+                <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                    <Border Width="14" Height="14" CornerRadius="{StaticResource ControlCornerRadius}"
+                            Background="{DynamicResource AccentBackground}" />
+                    <TextBlock Text="HLA FOM Reader" Margin="9,0,0,0" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" />
+                    <TextBlock Text="Register FOM" Margin="12,0,0,0" FontSize="11"
+                               Foreground="{DynamicResource TextDisabled}" VerticalAlignment="Center" />
+                </StackPanel>
+
+            </DockPanel>
+        </Border>
+
+        <!-- ============ Body ============ -->
+        <StackPanel Grid.Row="1" Margin="20,18,20,18">
+
+            <TextBlock Text="Register a FOM" FontSize="15" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimary}" />
+
+            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12.5"
+                       Foreground="{DynamicResource TextSecondary}"
+                       Text="Which standard does the model follow? The answer decides how many files HLA FOM Reader needs, so it is asked before anything is read." />
+
+            <!-- ============ Choice: HLA 1.3 ============ -->
+            <Border Margin="0,18,0,0">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource ChoiceCard}">
+                        <Style.Triggers>
+                            <!-- The selected card takes the accent border so the revealed file rows
+                                 read as belonging to it rather than floating between the two cards. -->
+                            <DataTrigger Binding="{Binding IsChecked, ElementName=Hla13Choice}" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBackground}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+
+                <StackPanel>
+                    <RadioButton x:Name="Hla13Choice" GroupName="Standard" Checked="Standard_Checked">
+                        <TextBlock Style="{StaticResource ChoiceHeading}" Text="HLA 1.3" />
+                    </RadioButton>
+                    <TextBlock Style="{StaticResource ChoiceCaption}"
+                               Text="Two files: the .fed the RTI loads, plus the .omt object model that carries the datatypes. Neither is complete on its own." />
+
+                    <StackPanel x:Name="Hla13Files" Margin="24,14,0,0" Visibility="Collapsed">
+
+                        <!-- FED file -->
+                        <TextBlock Style="{StaticResource FieldLabel}">
+                            <Run Text="FED FILE" /><Run Text="   REQUIRED" Foreground="{DynamicResource TextDisabled}" />
+                        </TextBlock>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="FedPathBox" Grid.Column="0" Style="{StaticResource PathBox}"
+                                     Tag="No FED file chosen" />
+                            <Button Grid.Column="1" Style="{StaticResource RowButton}" Content="Browse…"
+                                    Click="BrowseFed_Click" AutomationProperties.Name="Browse for FED file" />
+                        </Grid>
+
+                        <!-- OMT file -->
+                        <TextBlock Style="{StaticResource FieldLabel}" Margin="0,14,0,4">
+                            <Run Text="OMT FILE" /><Run Text="   OPTIONAL" Foreground="{DynamicResource TextDisabled}" />
+                        </TextBlock>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="OmtPathBox" Grid.Column="0" Style="{StaticResource PathBox}"
+                                     Tag="No OMT file chosen" />
+                            <Button Grid.Column="1" Style="{StaticResource RowButton}" Content="Browse…"
+                                    Click="BrowseOmt_Click" AutomationProperties.Name="Browse for OMT file" />
+                            <!-- Browsing cannot express "none", so clearing needs a control of its own. -->
+                            <Button x:Name="ClearOmtButton" Grid.Column="2" Style="{StaticResource RowButton}"
+                                    Content="Clear" Margin="4,0,0,0" Click="ClearOmt_Click"
+                                    AutomationProperties.Name="Clear the OMT file" />
+                        </Grid>
+
+                        <TextBlock x:Name="OmtPairedNote" Style="{StaticResource RowNote}"
+                                   Visibility="Collapsed" Text="Found alongside the FED." />
+
+                        <TextBlock x:Name="OmtMissingWarning" Style="{StaticResource RowWarning}"
+                                   Visibility="Collapsed"
+                                   Text="Without an OMT this FOM will have no datatypes — HLA 1.3 FED files do not carry them." />
+
+                        <TextBlock x:Name="Hla13Error" Style="{StaticResource RowError}" Visibility="Collapsed" />
+
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ============ Choice: HLA Evolved / IEEE 1516 ============ -->
+            <Border Margin="0,12,0,0">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource ChoiceCard}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsChecked, ElementName=EvolvedChoice}" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBackground}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+
+                <StackPanel>
+                    <!-- Default: the single-file case is much the more common one. -->
+                    <RadioButton x:Name="EvolvedChoice" GroupName="Standard" IsChecked="True" Checked="Standard_Checked">
+                        <TextBlock Style="{StaticResource ChoiceHeading}" Text="HLA Evolved / IEEE 1516" />
+                    </RadioButton>
+                    <TextBlock Style="{StaticResource ChoiceCaption}"
+                               Text="One .xml FOM, or the modules of one — datatypes are part of the file." />
+
+                    <StackPanel x:Name="EvolvedFiles" Margin="24,14,0,0">
+
+                        <TextBlock Style="{StaticResource FieldLabel}">
+                            <Run Text="FOM FILE" /><Run Text="   ONE OR MORE" Foreground="{DynamicResource TextDisabled}" />
+                        </TextBlock>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="EvolvedPathBox" Grid.Column="0" Style="{StaticResource PathBox}"
+                                     Tag="No FOM file chosen" />
+                            <Button Grid.Column="1" Style="{StaticResource RowButton}" Content="Browse…"
+                                    Click="BrowseEvolved_Click" AutomationProperties.Name="Browse for FOM files" />
+                        </Grid>
+
+                        <TextBlock x:Name="EvolvedCountNote" Style="{StaticResource RowNote}" Visibility="Collapsed" />
+
+                        <!--
+                            Only shown once more than one file is chosen.
+
+                            Several 1516 files chosen together are the modules of one FOM, and the
+                            registry entry is the model they compile to. There is no second reading
+                            offered: an entry per file would be a registry of modules, and a module
+                            read on its own is not a small FOM but a misleading one — sixteen of
+                            NETN-Physical's twenty-seven classes look empty, and comparing it against
+                            a complete FOM reports the missing modules' attributes as deletions
+                            somebody authored. Registering FOMs that are genuinely unrelated is one
+                            file at a time, which is what it always was.
+                        -->
+                        <StackPanel x:Name="CompileSection" Margin="0,14,0,0" Visibility="Collapsed">
+
+                            <TextBlock Style="{StaticResource FieldLabel}" Text="MERGE ORDER" />
+
+                            <!--
+                                Order is the whole input. An RTI is handed a module list and merges
+                                it in the order given, bases first; this list is that list, so it is
+                                reorderable rather than sorted for the user.
+                            -->
+                            <Border Margin="0,4,0,0" Padding="1"
+                                    Background="{DynamicResource SurfaceAltBackground}"
+                                    BorderBrush="{DynamicResource Divider}" BorderThickness="1"
+                                    CornerRadius="{StaticResource ControlCornerRadiusSmall}">
+                                <DockPanel LastChildFill="True">
+
+                                    <StackPanel DockPanel.Dock="Right" Margin="6,6,6,6" VerticalAlignment="Top">
+                                        <Button x:Name="MoveUpButton" Style="{StaticResource IconButton}"
+                                                Content="▲" FontSize="10" Margin="0" Click="MoveUp_Click"
+                                                ToolTip="Compile this module earlier"
+                                                AutomationProperties.Name="Move module earlier" />
+                                        <Button x:Name="MoveDownButton" Style="{StaticResource IconButton}"
+                                                Content="▼" FontSize="10" Margin="0,4,0,0" Click="MoveDown_Click"
+                                                ToolTip="Compile this module later"
+                                                AutomationProperties.Name="Move module later" />
+                                    </StackPanel>
+
+                                    <ListBox x:Name="ModuleList" Height="132" BorderThickness="0"
+                                             Background="Transparent"
+                                             SelectionChanged="ModuleList_SelectionChanged"
+                                             AutomationProperties.Name="Module merge order">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <DockPanel LastChildFill="True">
+                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Position}"
+                                                               Width="22" FontSize="11"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource TextDisabled}" />
+                                                    <TextBlock Text="{Binding FileName}" FontSize="12.5"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               ToolTip="{Binding FullPath}" />
+                                                </DockPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </DockPanel>
+                            </Border>
+
+                            <TextBlock Style="{StaticResource RowNote}"
+                                       Margin="0,7,0,0" TextWrapping="Wrap"
+                                       Text="Compiled in this order, bases first — the same module list an RTI is given. You will be asked where to save the result." />
+
+                        </StackPanel>
+
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ============ Optional name ============ -->
+            <!--
+                Optional for a single file, which has a name of its own to fall back on, and required
+                for a compile, which does not: the merged model would otherwise be filed under
+                whichever module happened to be last in the list, and a FOM named after one of its
+                parts is a FOM nobody can find again.
+            -->
+            <StackPanel x:Name="NameSection" Margin="0,16,0,0">
+                <TextBlock Style="{StaticResource FieldLabel}">
+                    <Run Text="NAME" /><Run x:Name="NameRequirement" Text="   OPTIONAL"
+                                            Foreground="{DynamicResource TextDisabled}" />
+                </TextBlock>
+                <TextBox x:Name="NameBox" Height="30" Tag="Leave blank to use the FOM's own name"
+                         TextChanged="Name_Changed" />
+            </StackPanel>
+
+            <!-- ============ Footer ============ -->
+            <DockPanel Margin="0,18,0,0" LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="Cancel" Style="{StaticResource SubtleButton}"
+                            Height="30" Padding="14,0" MinWidth="82" IsCancel="True" />
+                    <Button x:Name="RegisterButton" Content="Register" Style="{StaticResource AccentButton}"
+                            Height="30" Padding="16,0" MinWidth="82" Margin="8,0,0,0"
+                            IsDefault="True" Click="Register_Click" />
+                </StackPanel>
+                <!-- Says out loud why Register is greyed out, so the disabled state is never silent. -->
+                <TextBlock x:Name="BlockedHint" VerticalAlignment="Center" Margin="0,0,12,0"
+                           TextWrapping="Wrap" FontSize="11"
+                           Foreground="{DynamicResource TextSecondary}" />
+            </DockPanel>
+
+        </StackPanel>
+    </Grid>
+</Window>

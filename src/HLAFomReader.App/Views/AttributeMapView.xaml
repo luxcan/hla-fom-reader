@@ -1,0 +1,488 @@
+<UserControl x:Class="HLAFomReader.App.Views.AttributeMapView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:HLAFomReader.App.ViewModels"
+             xmlns:conv="clr-namespace:HLAFomReader.App.Converters"
+             xmlns:cmp="clr-namespace:HLAFomReader.Core.Comparison;assembly=HLAFomReader.Core"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:AttributeMapViewModel}"
+             Background="{DynamicResource SurfaceBackground}"
+             Foreground="{DynamicResource TextPrimary}"
+             FontFamily="{StaticResource AppFontFamily}"
+             FontSize="{StaticResource FontSizeBody}">
+
+    <UserControl.Resources>
+
+        <Style x:Key="FilterCheck" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+            <Setter Property="Margin" Value="0,0,16,0" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="KindToggle" TargetType="ToggleButton" BasedOn="{StaticResource {x:Type ToggleButton}}">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!--
+            The status palette. Same four colours the difference tree uses, so the two tabs read
+            alike, plus a grey for Moved: inheritance means a moved attribute is still available on
+            the class, so it is context rather than work. Renamed is quieter still — a flat control
+            fill rather than a colour — because a renamed datatype encodes identically and putting it
+            anywhere near the amber of a real re-encode is what buried the real ones.
+        -->
+        <Style x:Key="StatusPill" TargetType="Border">
+            <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadiusSmall}" />
+            <Setter Property="Padding" Value="7,2" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.DataTypeChanged}">
+                    <Setter Property="Background" Value="{DynamicResource StatusChanged}" />
+                </DataTrigger>
+                <!-- A rename encodes identically, so it reads as Same. The DataType A / DataType B
+                     columns already show that the name differs; a separate badge only added a
+                     status the reader has to think about for no gain. -->
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.Renamed}">
+                    <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.OnlyInLeft}">
+                    <Setter Property="Background" Value="{DynamicResource StatusRemoved}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.OnlyInRight}">
+                    <Setter Property="Background" Value="{DynamicResource StatusAdded}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.Moved}">
+                    <Setter Property="Background" Value="{DynamicResource StatusNeutral}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.Same}">
+                    <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="StatusLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource StatusForeground}" />
+            <Setter Property="Text" Value="Same" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.DataTypeChanged}">
+                    <Setter Property="Text" Value="Changed" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.Renamed}">
+                    <Setter Property="Text" Value="Same" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.OnlyInLeft}">
+                    <Setter Property="Text" Value="Only in A" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.OnlyInRight}">
+                    <Setter Property="Text" Value="Only in B" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.Moved}">
+                    <Setter Property="Text" Value="Moved" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="NameCell" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+
+        <!--
+            The datatype pair is the column being scanned: when the encoding changed, the values on
+            both sides go amber so the eye lands on the row without reading the status badge first.
+            Amber is reserved for DataTypeChanged alone — a renamed type stays in the ordinary
+            foreground, since highlighting the 600-odd renames of a version step is precisely what
+            hid the few dozen rows that really do re-encode.
+        -->
+        <Style x:Key="DataTypeCell" TargetType="TextBlock" BasedOn="{StaticResource NameCell}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.DataTypeChanged}">
+                    <Setter Property="Foreground" Value="{DynamicResource StatusChangedText}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--
+            The canonical encoding a datatype name resolves to. Held quieter than the name beside it:
+            it is the evidence for the status badge, read when a row is questioned rather than while
+            scanning.
+        -->
+        <Style x:Key="EncodingCell" TargetType="TextBlock" BasedOn="{StaticResource NameCell}">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+
+        <!--
+            The datatype name is clickable: it opens the inspector, which says what the field can
+            actually hold. The NAME rather than the encoding beside it, because the name is what the
+            FOM declares and the encoding is only what this tool worked out from it — clicking the
+            derived value to see the authored one reads backwards.
+
+            The affordance is deliberately faint — an underline on hover and nothing at rest —
+            because these two columns appear on all 1,690 rows, and button chrome on every one of
+            them would turn a worksheet into a control panel. A row with no datatype on that side
+            disables the button, which drops it back to plain text rather than offering a click that
+            would answer nothing.
+        -->
+        <Style x:Key="DataTypeLink" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent">
+                            <TextBlock x:Name="Text" Style="{StaticResource DataTypeCell}"
+                                       Text="{TemplateBinding Content}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <!-- Underline only. The foreground is left alone so a re-encoded row
+                                 keeps the amber DataTypeCell gives it. -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Text" Property="TextDecorations" Value="Underline" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MutedCell" TargetType="TextBlock" BasedOn="{StaticResource NameCell}">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="34" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Filters ============ -->
+        <Border Grid.Row="0" Background="{DynamicResource SurfaceAltBackground}"
+                BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+            <!--
+                One row, never two: the strip is a fixed 34 DIP and anything that wrapped would be
+                clipped rather than shown. Everything but the search box is Auto-width, so when the
+                window narrows it is the search box that gives — down to 120 DIP, still wide enough
+                to type a datatype name into — instead of a chip or the headline being cut off.
+            -->
+            <Grid Margin="14,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" MinWidth="120" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!--
+                    The class scope, first because it is now the primary control: the question this
+                    screen answers is almost always about one class, and 1690 rows of every class at
+                    once is the thing standing in the way of it.
+                -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
+                            Margin="0,0,12,0">
+                    <ComboBox Width="260" Height="24" MinHeight="24" VerticalAlignment="Center"
+                              ItemsSource="{Binding ObjectClasses}"
+                              SelectedItem="{Binding SelectedObjectClass}"
+                              HorizontalContentAlignment="Stretch"
+                              IsTextSearchEnabled="True" TextSearch.TextPath="LeafName"
+                              ToolTip="Show only one object class — everything it declares plus everything it inherits. Type a name to jump to it.">
+                        <!--
+                            The leaf name leads, and it has to: every class here is called
+                            ObjectRoot.something.something.X, so a list of qualified names would make
+                            type-to-select match "ObjectRoot" on the first keystroke and never get
+                            any further. The path trails it as quiet context, capped and trimmed so a
+                            deep hierarchy cannot stretch the drop-down open.
+                        -->
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="{Binding LeafName}" FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextPrimary}" />
+
+                                    <!-- Path=Path spelled out: the property really is called Path. -->
+                                    <TextBlock Grid.Column="1" Text="{Binding Path=Path}" FontSize="10"
+                                               MaxWidth="140" Margin="8,0,8,0" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextDisabled}" />
+
+                                    <TextBlock Grid.Column="2" Text="{Binding RowCount}" FontSize="10"
+                                               HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondary}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                    <Button Style="{StaticResource SubtleButton}" Content="✕" Width="22" Height="22"
+                            Margin="4,0,0,0" Padding="0" FontSize="11" VerticalAlignment="Center"
+                            Command="{Binding ClearClassScopeCommand}"
+                            Visibility="{Binding IsClassScoped, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}"
+                            ToolTip="Show every class again" />
+                </StackPanel>
+
+                <CheckBox Grid.Column="1" Style="{StaticResource FilterCheck}"
+                          Content="Only rows that need attention" IsChecked="{Binding OnlyDifferences}"
+                          ToolTip="Hide attributes that carry the same data on both sides, and those whose datatype was only renamed" />
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                            Margin="0,0,6,0">
+
+                    <ToggleButton Style="{StaticResource KindToggle}"
+                                  IsChecked="{Binding ShowChanged}"
+                                  ToolTip="Present in both FOMs but encoded differently — the values need converting">
+                        <TextBlock>
+                            <Run Text="~ Changed " />
+                            <Run Text="{Binding ChangedCount, Mode=OneWay}" FontWeight="SemiBold" />
+                        </TextBlock>
+                    </ToggleButton>
+
+
+                    <ToggleButton Style="{StaticResource KindToggle}"
+                                  IsChecked="{Binding ShowMoved}"
+                                  ToolTip="Declared on a different class, but inherited and identically typed — nothing to convert">
+                        <TextBlock>
+                            <Run Text="→ Moved " />
+                            <Run Text="{Binding MovedCount, Mode=OneWay}" FontWeight="SemiBold" />
+                        </TextBlock>
+                    </ToggleButton>
+
+                    <ToggleButton Style="{StaticResource KindToggle}"
+                                  IsChecked="{Binding ShowOnlyLeft}"
+                                  ToolTip="In FOM A only — data for it has nowhere to go">
+                        <TextBlock>
+                            <Run Text="− Only in A " />
+                            <Run Text="{Binding OnlyLeftCount, Mode=OneWay}" FontWeight="SemiBold" />
+                        </TextBlock>
+                    </ToggleButton>
+
+                    <ToggleButton Style="{StaticResource KindToggle}"
+                                  IsChecked="{Binding ShowOnlyRight}"
+                                  ToolTip="In FOM B only — nothing in FOM A feeds it">
+                        <TextBlock>
+                            <Run Text="+ Only in B " />
+                            <Run Text="{Binding OnlyRightCount, Mode=OneWay}" FontWeight="SemiBold" />
+                        </TextBlock>
+                    </ToggleButton>
+
+                    <!-- One chip for "no work": identical datatypes and pure renames alike. -->
+                    <ToggleButton Style="{StaticResource KindToggle}"
+                                  IsChecked="{Binding ShowSame}" Margin="0,0,0,0"
+                                  ToolTip="Show the attributes that carry the same data on both sides, including those whose datatype was only renamed">
+                        <TextBlock>
+                            <Run Text="= Same " />
+                            <Run Text="{Binding SameOrRenamedCount, Mode=OneWay}" FontWeight="SemiBold" />
+                        </TextBlock>
+                    </ToggleButton>
+
+                </StackPanel>
+
+                <Grid Grid.Column="3" Height="24" MinWidth="120" Margin="6,0,10,0"
+                      HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                    <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}"
+                             Tag="Filter class, attribute or datatype" FontSize="11.5" Height="24"
+                             VerticalContentAlignment="Center"
+                             ToolTip="Matches the class, the attribute, either datatype name and either resolved encoding" />
+                    <Button Style="{StaticResource SubtleButton}" Content="✕" Width="22" Height="22"
+                            HorizontalAlignment="Right" Margin="0,0,4,0" Padding="0" FontSize="11"
+                            Command="{Binding ClearSearchCommand}"
+                            Visibility="{Binding SearchText, Converter={x:Static conv:StringEmptyToVisibilityConverter.Instance}}"
+                            ToolTip="Clear the attribute filter" />
+                </Grid>
+
+                <Button Grid.Column="4" Style="{StaticResource SubtleButton}" Content="Export CSV…"
+                        Height="22" Padding="9,0" FontSize="11.5" VerticalAlignment="Center"
+                        Command="{Binding ExportCsvCommand}"
+                        ToolTip="Write the rows shown here to a CSV remap worksheet" />
+
+                <TextBlock Grid.Column="5" Text="{Binding Summary}" VerticalAlignment="Center"
+                           Margin="12,0,0,0" FontSize="11.5" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource TextSecondary}" />
+
+            </Grid>
+        </Border>
+
+        <!-- ============ Advisories ============ -->
+        <ItemsControl Grid.Row="1" ItemsSource="{Binding Advisories}" Margin="14,10,14,0"
+                      Visibility="{Binding Advisories.Count, Converter={x:Static conv:CountToVisibilityConverter.Instance}}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Background="{DynamicResource ControlBackground}"
+                            BorderBrush="{DynamicResource AccentBackground}"
+                            BorderThickness="2,0,0,0" Padding="10,6" Margin="0,0,0,4">
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="11.5"
+                                   Foreground="{DynamicResource TextSecondary}" />
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ============ The map ============ -->
+        <Grid Grid.Row="2">
+            <DataGrid ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
+                      AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                      SelectionMode="Single" AlternationCount="2"
+                      GridLinesVisibility="Horizontal" CanUserResizeRows="False"
+                      CanUserSortColumns="True">
+                <DataGrid.Columns>
+
+                    <DataGridTemplateColumn Header="Status" Width="110" SortMemberPath="Status">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource StatusPill}">
+                                    <TextBlock Style="{StaticResource StatusLabel}" />
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Object class" Width="1.6*" SortMemberPath="ClassName">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Style="{StaticResource NameCell}" Text="{Binding ClassName}"
+                                           ToolTip="{Binding ClassName}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Attribute" Width="1.4*" SortMemberPath="AttributeName">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Style="{StaticResource NameCell}" Text="{Binding AttributeName}"
+                                           ToolTip="{Binding QualifiedName}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="DataType A" Width="1.3*" SortMemberPath="LeftDataType">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource DataTypeLink}"
+                                        Content="{Binding LeftDataType, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                        Command="{Binding DataContext.ShowLeftDataTypeCommand,
+                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="Show what this datatype can hold" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!--
+                        Each encoding sits immediately after the name it resolves to, so the pair
+                        reads as one thing: what the FOM calls it, and what it actually is.
+                    -->
+                    <DataGridTemplateColumn Header="Encoding A" Width="110" SortMemberPath="LeftEncoding">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Style="{StaticResource EncodingCell}"
+                                           Text="{Binding LeftEncoding, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                           ToolTip="{Binding LeftEncoding}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="DataType B" Width="1.3*" SortMemberPath="RightDataType">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource DataTypeLink}"
+                                        Content="{Binding RightDataType, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                        Command="{Binding DataContext.ShowRightDataTypeCommand,
+                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="Show what this datatype can hold" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Encoding B" Width="110" SortMemberPath="RightEncoding">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Style="{StaticResource EncodingCell}"
+                                           Text="{Binding RightEncoding, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                           ToolTip="{Binding RightEncoding}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Where the attribute is declared, which is usually an ancestor of the class. -->
+                    <DataGridTemplateColumn Header="Declared in A" Width="140" SortMemberPath="LeftDeclaredIn">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Style="{StaticResource MutedCell}"
+                                           Text="{Binding LeftDeclaredIn, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                           ToolTip="{Binding LeftDeclaredIn}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Declared in B" Width="140" SortMemberPath="RightDeclaredIn">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Style="{StaticResource MutedCell}"
+                                           Text="{Binding RightDeclaredIn, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                           ToolTip="{Binding RightDeclaredIn}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Note" Width="1.6*" SortMemberPath="Note">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Note}" FontSize="11.5" TextWrapping="Wrap"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondary}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <TextBlock Text="{Binding EmptyMessage}" Margin="32" TextWrapping="Wrap"
+                       TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="12.5" Foreground="{DynamicResource TextDisabled}"
+                       Visibility="{Binding HasRows, Converter={x:Static conv:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}" />
+        </Grid>
+
+        <!-- Busy overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="3" Background="{DynamicResource Scrim}"
+                Visibility="{Binding IsBusy, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="220" Height="6" />
+                <TextBlock Text="{Binding BusyMessage}" Margin="0,12,0,0" HorizontalAlignment="Center"
+                           FontSize="12.5" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

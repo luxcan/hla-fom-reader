@@ -1,0 +1,121 @@
+<!--
+    Precision theme — Dark
+    Generated from the design reference: "WPF Theme Pair.dc.html"
+    Merge exactly ONE of Precision.Light.xaml / Precision.Dark.xaml at a time.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ===== Colors ===== -->
+    <Color x:Key="AppBackgroundColor">#FF14181D</Color>
+    <Color x:Key="SurfaceBackgroundColor">#FF1B2026</Color>
+    <Color x:Key="SurfaceAltBackgroundColor">#FF20262D</Color>
+    <Color x:Key="TitleBarBackgroundColor">#FF101418</Color>
+    <Color x:Key="StatusBarBackgroundColor">#FF20262D</Color>
+    <Color x:Key="StatusBarForegroundColor">#FF9AA7B5</Color>
+    <Color x:Key="ControlBackgroundColor">#FF242B33</Color>
+    <Color x:Key="ControlBackgroundHoverColor">#FF2D3641</Color>
+    <Color x:Key="ControlBackgroundPressedColor">#FF37414D</Color>
+    <Color x:Key="ControlBackgroundDisabledColor">#FF1E242A</Color>
+    <Color x:Key="ControlBorderColor">#FF39434E</Color>
+    <Color x:Key="ControlBorderHoverColor">#FF4E5B69</Color>
+    <Color x:Key="ControlBorderDisabledColor">#FF2A3139</Color>
+    <Color x:Key="DividerColor">#FF2A313A</Color>
+    <Color x:Key="TextPrimaryColor">#FFE6EBF1</Color>
+    <Color x:Key="TextSecondaryColor">#FF9AA7B5</Color>
+    <Color x:Key="TextDisabledColor">#FF5C6875</Color>
+    <Color x:Key="AccentBackgroundColor">#FF37B6D8</Color>
+    <Color x:Key="AccentBackgroundHoverColor">#FF4FC5E4</Color>
+    <Color x:Key="AccentBackgroundPressedColor">#FF2A9EBD</Color>
+    <Color x:Key="AccentForegroundColor">#FF07141A</Color>
+    <Color x:Key="FocusVisualColor">#6637B6D8</Color>
+    <Color x:Key="SelectionBackgroundColor">#FF22414F</Color>
+    <Color x:Key="SelectionBackgroundHoverColor">#FF2A4F60</Color>
+    <Color x:Key="SelectionUnfocusedColor">#FF232A32</Color>
+    <Color x:Key="RowAlternatingColor">#FF1F252B</Color>
+    <Color x:Key="ScrollBarTrackColor">#FF1B2026</Color>
+    <Color x:Key="ScrollBarThumbColor">#FF414C58</Color>
+    <Color x:Key="ScrollBarThumbHoverColor">#FF5A6875</Color>
+    <Color x:Key="TooltipBackgroundColor">#FF2D3641</Color>
+    <Color x:Key="TooltipForegroundColor">#FFE6EBF1</Color>
+    <Color x:Key="TooltipBorderColor">#FF414C58</Color>
+    <Color x:Key="ValidationErrorColor">#FFE56B5E</Color>
+    <Color x:Key="ValidationErrorRingColor">#40E56B5E</Color>
+
+
+    <!-- ===== Application semantics =====
+         Not part of the base handoff: this app's diff vocabulary and the wash it dims behind
+         modals. Chips are bright fills carrying near-black label text in both modes, so the five
+         outcomes read the same way whichever theme is on. -->
+    <Color x:Key="StatusChangedColor">#FFE0B341</Color>
+    <Color x:Key="StatusRemovedColor">#FFE56B5E</Color>
+    <Color x:Key="StatusAddedColor">#FF4FC5E4</Color>
+    <Color x:Key="StatusNeutralColor">#FF9AA7B5</Color>
+    <Color x:Key="StatusForegroundColor">#FF07141A</Color>
+    <!-- The same three outcomes said in running text rather than on a chip. A fill that carries
+         near-black label text and a colour that is legible as text on the page are different jobs:
+         in the dark theme one value does both, in the light theme it cannot. -->
+    <Color x:Key="StatusChangedTextColor">#FFE0B341</Color>
+    <Color x:Key="StatusRemovedTextColor">#FFE56B5E</Color>
+    <Color x:Key="StatusAddedTextColor">#FF4FC5E4</Color>
+
+    <Color x:Key="ScrimColor">#B014181D</Color>
+
+    <!-- ===== Brushes ===== -->
+    <SolidColorBrush x:Key="AppBackground" Color="{StaticResource AppBackgroundColor}" />
+    <SolidColorBrush x:Key="SurfaceBackground" Color="{StaticResource SurfaceBackgroundColor}" />
+    <SolidColorBrush x:Key="SurfaceAltBackground" Color="{StaticResource SurfaceAltBackgroundColor}" />
+    <SolidColorBrush x:Key="TitleBarBackground" Color="{StaticResource TitleBarBackgroundColor}" />
+    <SolidColorBrush x:Key="StatusBarBackground" Color="{StaticResource StatusBarBackgroundColor}" />
+    <SolidColorBrush x:Key="StatusBarForeground" Color="{StaticResource StatusBarForegroundColor}" />
+    <SolidColorBrush x:Key="ControlBackground" Color="{StaticResource ControlBackgroundColor}" />
+    <SolidColorBrush x:Key="ControlBackgroundHover" Color="{StaticResource ControlBackgroundHoverColor}" />
+    <SolidColorBrush x:Key="ControlBackgroundPressed" Color="{StaticResource ControlBackgroundPressedColor}" />
+    <SolidColorBrush x:Key="ControlBackgroundDisabled" Color="{StaticResource ControlBackgroundDisabledColor}" />
+    <SolidColorBrush x:Key="ControlBorder" Color="{StaticResource ControlBorderColor}" />
+    <SolidColorBrush x:Key="ControlBorderHover" Color="{StaticResource ControlBorderHoverColor}" />
+    <SolidColorBrush x:Key="ControlBorderDisabled" Color="{StaticResource ControlBorderDisabledColor}" />
+    <SolidColorBrush x:Key="Divider" Color="{StaticResource DividerColor}" />
+    <SolidColorBrush x:Key="TextPrimary" Color="{StaticResource TextPrimaryColor}" />
+    <SolidColorBrush x:Key="TextSecondary" Color="{StaticResource TextSecondaryColor}" />
+    <SolidColorBrush x:Key="TextDisabled" Color="{StaticResource TextDisabledColor}" />
+    <SolidColorBrush x:Key="AccentBackground" Color="{StaticResource AccentBackgroundColor}" />
+    <SolidColorBrush x:Key="AccentBackgroundHover" Color="{StaticResource AccentBackgroundHoverColor}" />
+    <SolidColorBrush x:Key="AccentBackgroundPressed" Color="{StaticResource AccentBackgroundPressedColor}" />
+    <SolidColorBrush x:Key="AccentForeground" Color="{StaticResource AccentForegroundColor}" />
+    <SolidColorBrush x:Key="FocusVisual" Color="{StaticResource FocusVisualColor}" />
+    <SolidColorBrush x:Key="SelectionBackground" Color="{StaticResource SelectionBackgroundColor}" />
+    <SolidColorBrush x:Key="SelectionBackgroundHover" Color="{StaticResource SelectionBackgroundHoverColor}" />
+    <SolidColorBrush x:Key="SelectionUnfocused" Color="{StaticResource SelectionUnfocusedColor}" />
+    <SolidColorBrush x:Key="RowAlternating" Color="{StaticResource RowAlternatingColor}" />
+    <SolidColorBrush x:Key="ScrollBarTrack" Color="{StaticResource ScrollBarTrackColor}" />
+    <SolidColorBrush x:Key="ScrollBarThumb" Color="{StaticResource ScrollBarThumbColor}" />
+    <SolidColorBrush x:Key="ScrollBarThumbHover" Color="{StaticResource ScrollBarThumbHoverColor}" />
+    <SolidColorBrush x:Key="TooltipBackground" Color="{StaticResource TooltipBackgroundColor}" />
+    <SolidColorBrush x:Key="TooltipForeground" Color="{StaticResource TooltipForegroundColor}" />
+    <SolidColorBrush x:Key="TooltipBorder" Color="{StaticResource TooltipBorderColor}" />
+    <SolidColorBrush x:Key="ValidationError" Color="{StaticResource ValidationErrorColor}" />
+    <SolidColorBrush x:Key="ValidationErrorRing" Color="{StaticResource ValidationErrorRingColor}" />
+
+    <SolidColorBrush x:Key="StatusChanged" Color="{StaticResource StatusChangedColor}" />
+    <SolidColorBrush x:Key="StatusRemoved" Color="{StaticResource StatusRemovedColor}" />
+    <SolidColorBrush x:Key="StatusAdded" Color="{StaticResource StatusAddedColor}" />
+    <SolidColorBrush x:Key="StatusNeutral" Color="{StaticResource StatusNeutralColor}" />
+    <SolidColorBrush x:Key="StatusForeground" Color="{StaticResource StatusForegroundColor}" />
+    <SolidColorBrush x:Key="StatusChangedText" Color="{StaticResource StatusChangedTextColor}" />
+    <SolidColorBrush x:Key="StatusRemovedText" Color="{StaticResource StatusRemovedTextColor}" />
+    <SolidColorBrush x:Key="StatusAddedText" Color="{StaticResource StatusAddedTextColor}" />
+    <SolidColorBrush x:Key="Scrim" Color="{StaticResource ScrimColor}" />
+
+    <!-- ===== Metrics (identical in both modes of this direction) ===== -->
+    <CornerRadius x:Key="ControlCornerRadius">3</CornerRadius>
+    <CornerRadius x:Key="ControlCornerRadiusSmall">2</CornerRadius>
+    <Thickness x:Key="ControlBorderThickness">1</Thickness>
+    <Thickness x:Key="ControlPadding">12,0,12,0</Thickness>
+    <system:Double xmlns:system="clr-namespace:System;assembly=mscorlib" x:Key="ControlHeight">30</system:Double>
+    <system:Double xmlns:system="clr-namespace:System;assembly=mscorlib" x:Key="FontSizeBody">13</system:Double>
+    <system:Double xmlns:system="clr-namespace:System;assembly=mscorlib" x:Key="FontSizeSmall">12</system:Double>
+    <system:Double xmlns:system="clr-namespace:System;assembly=mscorlib" x:Key="FontSizeCaption">11</system:Double>
+    <FontFamily x:Key="AppFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+
+</ResourceDictionary>

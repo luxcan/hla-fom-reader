@@ -1,0 +1,434 @@
+<Window x:Class="HLAFomReader.App.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:HLAFomReader.App.ViewModels"
+        xmlns:views="clr-namespace:HLAFomReader.App.Views"
+        xmlns:conv="clr-namespace:HLAFomReader.App.Converters"
+        Title="HLA FOM Reader"
+        Width="1280" Height="820" MinWidth="1080" MinHeight="660"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        Background="{DynamicResource AppBackground}"
+        Foreground="{DynamicResource TextPrimary}"
+        FontFamily="{StaticResource AppFontFamily}"
+        FontSize="{StaticResource FontSizeBody}"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="36"
+                      ResizeBorderThickness="6"
+                      CornerRadius="0"
+                      GlassFrameThickness="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <!-- Ctrl+B collapses the sidebar, as it does in the editors this audience already lives in. -->
+    <Window.InputBindings>
+        <KeyBinding Modifiers="Control" Key="B" Command="{Binding ToggleSidebarCommand}" />
+    </Window.InputBindings>
+
+    <Window.Resources>
+
+        <!-- Screens are selected by view-model type so navigation stays view-model driven. -->
+        <DataTemplate DataType="{x:Type vm:RegistryViewModel}">
+            <views:RegistryView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:CompareViewModel}">
+            <views:CompareView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:FomDetailViewModel}">
+            <views:FomDetailView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+            <views:SettingsView />
+        </DataTemplate>
+
+        <!-- Caption buttons: 44 DIP wide, glyphs TextSecondary, close hover uses ValidationError. -->
+        <Style x:Key="CaptionButton" TargetType="Button">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ControlBackgroundHover}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CloseCaptionButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ValidationError}" />
+                                <Setter Property="Foreground" Value="#FFFFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Status bar item that can be clicked. Sized and coloured like the text beside it, so the
+             row still reads as a status bar rather than growing a button. -->
+        <Style x:Key="StatusBarLink" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="FontSize" Value="{StaticResource FontSizeSmall}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource AppFocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                                CornerRadius="{StaticResource ControlCornerRadiusSmall}">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ControlBackgroundHover}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ControlBackgroundPressed}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
+            Sidebar collapse control — 26 DIP, flat, hover-only, exactly as the design reference
+            draws it. Flat rather than boxed: the rows underneath it are flat too, and the one
+            bordered control on the panel reads as a different kind of thing than it is.
+
+            The guillemets point the way the panel will move, and flip once it has moved.
+        -->
+        <Style x:Key="SidebarToggleButton" TargetType="Button">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource AppFocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="Transparent"
+                                CornerRadius="{StaticResource ControlCornerRadiusSmall}"
+                                SnapsToDevicePixels="True">
+                            <TextBlock x:Name="Glyph" Text="«"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       FontSize="{TemplateBinding FontSize}"
+                                       Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ControlBackgroundHover}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ControlBackgroundPressed}" />
+                            </Trigger>
+                            <DataTrigger Binding="{Binding DataContext.IsSidebarCollapsed, RelativeSource={RelativeSource AncestorType=Window}}"
+                                         Value="True">
+                                <Setter TargetName="Glyph" Property="Text" Value="»" />
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
+            Sidebar navigation row: 32 DIP, 2 DIP accent rail and SelectionBackground when active.
+
+            The icon is present in both states and only the label and count come and go, so the two
+            states are the same row seen at two widths rather than two different rows. A glyph that
+            appeared out of nowhere on collapse would make the rail look like somewhere else.
+        -->
+        <Style x:Key="NavigationButton" TargetType="Button">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="Padding" Value="7,0" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource AppFocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{StaticResource ControlCornerRadius}">
+                            <Grid>
+                                <Border x:Name="Rail" Width="2" HorizontalAlignment="Left"
+                                        Background="Transparent" CornerRadius="1,0,0,1" />
+                                <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ControlBackgroundHover}" />
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SelectionBackground}" />
+                                <Setter TargetName="Rail" Property="Background" Value="{DynamicResource AccentBackground}" />
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.IsSidebarCollapsed, RelativeSource={RelativeSource AncestorType=Window}}"
+                             Value="True">
+                    <Setter Property="Padding" Value="0" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--
+            The panel itself. Width is animated over 180 ms rather than snapped, as the reference
+            specifies: the collapse is the one layout change in the app the reader causes directly,
+            and seeing the records take the space is what makes it obvious the space went to them.
+
+            The width is bound as well as animated. The binding is what sets the width on the first
+            frame, so a session that starts collapsed starts collapsed rather than animating shut in
+            front of the reader; from the first toggle onwards the animation holds the value.
+        -->
+        <Style x:Key="SidebarPanel" TargetType="Border">
+            <Setter Property="Width" Value="{Binding SidebarWidth}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceAltBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Divider}" />
+            <Setter Property="BorderThickness" Value="0,0,1,0" />
+            <Setter Property="ClipToBounds" Value="True" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSidebarCollapsed}" Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Width"
+                                                 To="52" Duration="0:0:0.18">
+                                    <DoubleAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut" />
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Width"
+                                                 To="196" Duration="0:0:0.18">
+                                    <DoubleAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut" />
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="36" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="28" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Title bar ============ -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource TitleBarBackground}"
+                BorderBrush="{DynamicResource Divider}"
+                BorderThickness="0,0,0,1">
+            <DockPanel LastChildFill="True">
+
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                            WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource CaptionButton}" Command="{Binding MinimizeCommand}"
+                            ToolTip="Minimise" AutomationProperties.Name="Minimise">
+                        <Rectangle Width="10" Height="1"
+                                   Fill="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" />
+                    </Button>
+                    <Button Style="{StaticResource CaptionButton}" Command="{Binding MaximizeCommand}"
+                            ToolTip="Maximise" AutomationProperties.Name="Maximise">
+                        <Rectangle Width="10" Height="10" StrokeThickness="1"
+                                   Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" />
+                    </Button>
+                    <Button Style="{StaticResource CloseCaptionButton}" Command="{Binding CloseCommand}"
+                            ToolTip="Close" AutomationProperties.Name="Close">
+                        <Path Data="M 0,0 L 10,10 M 10,0 L 0,10" StrokeThickness="1"
+                              Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" />
+                    </Button>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                    <Border Width="14" Height="14" CornerRadius="{StaticResource ControlCornerRadius}"
+                            Background="{DynamicResource AccentBackground}" />
+                    <TextBlock Text="HLA FOM Reader" Margin="9,0,0,0" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" />
+                </StackPanel>
+
+            </DockPanel>
+        </Border>
+
+        <!-- ============ Body ============ -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <!-- Sized to the panel, because the panel is what animates. -->
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" x:Name="Sidebar" Style="{StaticResource SidebarPanel}">
+                <DockPanel Margin="8,12,8,0">
+
+                    <!-- Header row: the section label, and the control that collapses the panel.
+                         On the panel's own top edge rather than in the title bar, because a control
+                         for a panel is only findable next to the panel it acts on. -->
+                    <Grid DockPanel.Dock="Top" Height="26" Margin="0,0,0,4">
+                        <TextBlock Text="WORKSPACE" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   FontSize="10" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   Visibility="{Binding IsSidebarExpanded, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}" />
+
+                        <Button x:Name="SidebarToggle" Style="{StaticResource SidebarToggleButton}"
+                                HorizontalAlignment="Right"
+                                Command="{Binding ToggleSidebarCommand}"
+                                ToolTip="{Binding SidebarToggleTooltip}"
+                                AutomationProperties.Name="Toggle sidebar" />
+                    </Grid>
+
+                    <!-- The design reference puts a theme switch at the foot of this panel. It is
+                         not here: the same control on the Settings screen is the one place it
+                         belongs, and two of them is two things to keep in step for a setting nobody
+                         changes twice. -->
+
+                    <ItemsControl DockPanel.Dock="Top" x:Name="NavigationList" ItemsSource="{Binding NavigationItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource NavigationButton}"
+                                        ToolTip="{Binding Tooltip}"
+                                        Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}">
+                                    <Grid>
+                                        <!-- Drawn rather than a font glyph so they stay crisp at any
+                                             DPI. The two that name a body of records are built from
+                                             the same three rows — whole for the registry, split down
+                                             the middle for the comparison of two. Settings is the
+                                             ordinary gear, because a bespoke mark for the one
+                                             destination every application already has is a puzzle
+                                             set for no reason. -->
+                                        <Path x:Name="Icon" Width="14" Height="14" Stretch="None"
+                                              HorizontalAlignment="Left" VerticalAlignment="Center"
+                                              Fill="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" />
+
+                                        <DockPanel x:Name="Label" Margin="24,0,0,0" LastChildFill="True">
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding Count}"
+                                                       FontSize="11" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextDisabled}" />
+                                            <TextBlock Text="{Binding Title}" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                    </Grid>
+                                </Button>
+
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding Screen}" Value="Registry">
+                                        <Setter TargetName="Icon" Property="Data"
+                                                Value="M0,2 H14 V4 H0 Z M0,6 H14 V8 H0 Z M0,10 H14 V12 H0 Z" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Screen}" Value="Compare">
+                                        <Setter TargetName="Icon" Property="Data"
+                                                Value="M0,2 H6 V4 H0 Z M8,2 H14 V4 H8 Z M0,6 H6 V8 H0 Z M8,6 H14 V8 H8 Z M0,10 H6 V12 H0 Z M8,10 H14 V12 H8 Z" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Screen}" Value="Settings">
+                                        <!-- Eight-tooth gear. F0 is the even-odd fill rule, which is
+                                             what turns the second subpath into the hub hole rather
+                                             than filling it in. -->
+                                        <Setter TargetName="Icon" Property="Data"
+                                                Value="F0 M 5.35,2.60 L 5.57,0.25 L 8.43,0.25 L 8.65,2.60 L 8.95,2.72 L 10.76,1.21 L 12.79,3.24 L 11.28,5.05 L 11.40,5.35 L 13.75,5.57 L 13.75,8.43 L 11.40,8.65 L 11.28,8.95 L 12.79,10.76 L 10.76,12.79 L 8.95,11.28 L 8.65,11.40 L 8.43,13.75 L 5.57,13.75 L 5.35,11.40 L 5.05,11.28 L 3.24,12.79 L 1.21,10.76 L 2.72,8.95 L 2.60,8.65 L 0.25,8.43 L 0.25,5.57 L 2.60,5.35 L 2.72,5.05 L 1.21,3.24 L 3.24,1.21 L 5.05,2.72 Z M 4.85,7.00 A 2.15,2.15 0 1 0 9.15,7.00 A 2.15,2.15 0 1 0 4.85,7.00 Z" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DataContext.IsSidebarCollapsed, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                 Value="True">
+                                        <Setter TargetName="Icon" Property="HorizontalAlignment" Value="Center" />
+                                        <Setter TargetName="Label" Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                </DockPanel>
+            </Border>
+
+            <ContentControl Grid.Column="1" x:Name="ScreenHost" Content="{Binding CurrentView}" Focusable="False" />
+        </Grid>
+
+        <!-- ============ Status bar ============ -->
+        <Border Grid.Row="2"
+                Background="{DynamicResource StatusBarBackground}"
+                BorderBrush="{DynamicResource Divider}"
+                BorderThickness="0,1,0,0">
+            <DockPanel Margin="14,0" LastChildFill="False">
+                <TextBlock DockPanel.Dock="Left" Text="{Binding StatusText}" VerticalAlignment="Center"
+                           FontSize="{StaticResource FontSizeSmall}"
+                           Foreground="{DynamicResource StatusBarForeground}" />
+                <Rectangle DockPanel.Dock="Left" Width="1" Height="13" Margin="12,0"
+                           Fill="{DynamicResource Divider}" VerticalAlignment="Center" />
+                <TextBlock DockPanel.Dock="Left" Text="{Binding StatusDetail}" VerticalAlignment="Center"
+                           FontSize="{StaticResource FontSizeSmall}"
+                           Foreground="{DynamicResource StatusBarForeground}" />
+
+                <!-- The corner answers the one question the app could not answer at all: which build
+                     is this? It reads without a click, and clicking opens the screen that says more. -->
+                <Button DockPanel.Dock="Right" Style="{StaticResource StatusBarLink}"
+                        Content="{Binding VersionLabel}"
+                        Command="{Binding ShowSettingsCommand}"
+                        ToolTip="{Binding VersionTooltip}"
+                        AutomationProperties.Name="About HLA FOM Reader" />
+
+                <!-- Which database is open is ambient information while the sidebar is expanded and
+                     the Settings screen names it. Collapsed, this is the row that says things. -->
+                <Rectangle DockPanel.Dock="Right" Width="1" Height="13" Margin="12,0"
+                           Fill="{DynamicResource Divider}" VerticalAlignment="Center" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding DatabaseName}"
+                           ToolTip="{Binding DatabasePath}"
+                           VerticalAlignment="Center" FontSize="{StaticResource FontSizeSmall}"
+                           Foreground="{DynamicResource TextDisabled}" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

@@ -1,0 +1,40 @@
+bin/
+obj/
+publish/
+publish-single/
+*.user
+.vs/
+.idea/
+
+# ---------------------------------------------------------------------------
+# FOM content and registry databases are never committed.
+#
+# Object models can be vendor-supplied, customer-specific or export-controlled,
+# and a registry database embeds whatever was registered into it. Neither
+# belongs in source control, so they are excluded by extension as well as by
+# folder — a stray .fed or .omt dropped anywhere in the tree stays out.
+# ---------------------------------------------------------------------------
+samples/
+*.fed
+*.omt
+*.omd
+*.fdd
+
+# An IEEE 1516 FOM is a .xml file, so the rules above protected the HLA 1.3
+# formats and left the Evolved ones - RPR 2.0, the whole NETN stack, every
+# module - free to be committed by accident. That is the wrong half to miss:
+# 1516 is the format most of this work is pointed at.
+#
+# Nothing in this repository is a .xml, so blanket-excluding them costs
+# nothing. Should one ever be genuinely needed, "git add -f" adds it - and
+# having to type that is the point.
+*.xml
+*.fom
+
+# SQLite registry databases and their write-ahead sidecars.
+*.db
+*.db-wal
+*.db-shm
+
+# Settings the app writes beside its executable.
+config.json

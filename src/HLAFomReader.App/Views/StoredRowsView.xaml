@@ -1,0 +1,366 @@
+<UserControl x:Class="HLAFomReader.App.Views.StoredRowsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:HLAFomReader.App.ViewModels"
+             xmlns:conv="clr-namespace:HLAFomReader.App.Converters"
+             xmlns:cmp="clr-namespace:HLAFomReader.Core.Comparison;assembly=HLAFomReader.Core"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:StoredRowsViewModel}"
+             Background="{DynamicResource SurfaceBackground}"
+             Foreground="{DynamicResource TextPrimary}"
+             FontFamily="{StaticResource AppFontFamily}"
+             FontSize="{StaticResource FontSizeBody}">
+
+    <UserControl.Resources>
+
+        <Style x:Key="PaneCaption" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+
+        <Style x:Key="FilterCheck" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+            <Setter Property="Margin" Value="0,0,16,0" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- A table nobody has rows for is still listed, but recedes. -->
+        <Style x:Key="TableName" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasRows}" Value="False">
+                    <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--
+            RowState has its own palette: DiffKindToBrushConverter maps DiffKind, which this screen
+            never sees, so the four states are painted from triggers instead. The colours are the
+            same ones DiffPalette uses, so the two tabs read alike.
+        -->
+        <Style x:Key="StateBadge" TargetType="Border">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadiusSmall}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Added}">
+                    <Setter Property="Background" Value="{DynamicResource StatusAdded}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Removed}">
+                    <Setter Property="Background" Value="{DynamicResource StatusRemoved}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Changed}">
+                    <Setter Property="Background" Value="{DynamicResource StatusChanged}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Same}">
+                    <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="StateGlyph" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource StatusForeground}" />
+            <Setter Property="Text" Value="=" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Added}">
+                    <Setter Property="Text" Value="+" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Removed}">
+                    <Setter Property="Text" Value="−" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Changed}">
+                    <Setter Property="Text" Value="~" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- The same palette at pill size, for the detail header. -->
+        <Style x:Key="StatePill" TargetType="Border">
+            <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadiusSmall}" />
+            <Setter Property="Padding" Value="7,2" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Added}">
+                    <Setter Property="Background" Value="{DynamicResource StatusAdded}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Removed}">
+                    <Setter Property="Background" Value="{DynamicResource StatusRemoved}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Changed}">
+                    <Setter Property="Background" Value="{DynamicResource StatusChanged}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Same}">
+                    <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="StateLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource StatusForeground}" />
+            <Setter Property="Text" Value="Same" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Added}">
+                    <Setter Property="Text" Value="Added" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Removed}">
+                    <Setter Property="Text" Value="Removed" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static cmp:RowState.Changed}">
+                    <Setter Property="Text" Value="Changed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="240" MinWidth="180" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" MinWidth="360" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="1.15*" MinWidth="300" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ============ Table list ============ -->
+        <DockPanel Grid.Column="0">
+
+            <Border DockPanel.Dock="Top" Height="34" Padding="12,0"
+                    BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                <TextBlock Style="{StaticResource PaneCaption}" Text="REGISTRY TABLES"
+                           VerticalAlignment="Center" />
+            </Border>
+
+            <ListBox ItemsSource="{Binding Tables}" SelectedItem="{Binding SelectedTable}"
+                     BorderThickness="0" Background="Transparent"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                        <!-- The difference rail wants the true left edge, so the item pads its own content. -->
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="ToolTip" Value="{Binding Description}" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Border Width="2" HorizontalAlignment="Left"
+                                    Background="{DynamicResource AccentBackground}"
+                                    Visibility="{Binding IsDifferent, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}" />
+                            <DockPanel Margin="11,0">
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding CountBadge}"
+                                           Margin="8,0,0,0" FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextDisabled}" />
+                                <TextBlock Style="{StaticResource TableName}" Text="{Binding DisplayName}" />
+                            </DockPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+
+        <GridSplitter Grid.Column="1" Width="1" HorizontalAlignment="Stretch"
+                      Background="{DynamicResource Divider}" ResizeBehavior="PreviousAndNext" />
+
+        <!-- ============ Aligned rows ============ -->
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="34" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="{DynamicResource SurfaceAltBackground}"
+                    BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                <DockPanel Margin="14,0" LastChildFill="False">
+
+                    <CheckBox DockPanel.Dock="Left" Style="{StaticResource FilterCheck}"
+                              Content="Only rows that differ" IsChecked="{Binding OnlyDifferences}"
+                              ToolTip="Hide rows that are identical in both FOMs" />
+
+                    <CheckBox DockPanel.Dock="Left" Style="{StaticResource FilterCheck}"
+                              Content="Ignore case" IsChecked="{Binding IgnoreCase}"
+                              ToolTip="Treat cell values that differ only in case as equal" />
+
+                    <Grid DockPanel.Dock="Left" Width="200" Height="24" Margin="0,0,10,0"
+                          VerticalAlignment="Center">
+                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}"
+                                 Tag="Filter rows" FontSize="11.5" Height="24"
+                                 VerticalContentAlignment="Center" />
+                        <Button Style="{StaticResource SubtleButton}" Content="✕" Width="22" Height="22"
+                                HorizontalAlignment="Right" Margin="0,0,4,0" Padding="0" FontSize="11"
+                                Command="{Binding ClearSearchCommand}"
+                                Visibility="{Binding SearchText, Converter={x:Static conv:StringEmptyToVisibilityConverter.Instance}}"
+                                ToolTip="Clear the row filter" />
+                    </Grid>
+
+                    <Button DockPanel.Dock="Left" Style="{StaticResource SubtleButton}" Content="Export CSV…"
+                            Height="22" Padding="9,0" FontSize="11.5" VerticalAlignment="Center"
+                            Command="{Binding ExportCsvCommand}"
+                            ToolTip="Write every stored row of this table, one line per cell, to a CSV file" />
+
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding RowSummary}" VerticalAlignment="Center"
+                               FontSize="11.5" Foreground="{DynamicResource TextSecondary}" />
+
+                </DockPanel>
+            </Border>
+
+            <Grid Grid.Row="1">
+                <DataGrid ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
+                          AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                          SelectionMode="Single" AlternationCount="2"
+                          GridLinesVisibility="Horizontal" CanUserResizeRows="False"
+                          CanUserSortColumns="False">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="" Width="46" CanUserSort="False">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource StateBadge}">
+                                        <TextBlock Style="{StaticResource StateGlyph}" />
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Key" Width="2*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Key}" FontSize="12.5" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Key}"
+                                               Foreground="{DynamicResource TextPrimary}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Changed columns" Width="2*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding ChangedColumns}" FontSize="12"
+                                               TextWrapping="Wrap" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondary}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <TextBlock Text="{Binding EmptyMessage}" Margin="32" TextWrapping="Wrap"
+                           TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           FontSize="12.5" Foreground="{DynamicResource TextDisabled}"
+                           Visibility="{Binding HasRows, Converter={x:Static conv:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}" />
+            </Grid>
+        </Grid>
+
+        <GridSplitter Grid.Column="3" Width="1" HorizontalAlignment="Stretch"
+                      Background="{DynamicResource Divider}" ResizeBehavior="PreviousAndNext" />
+
+        <!-- ============ Cell detail ============ -->
+        <Border Grid.Column="4" Background="{DynamicResource SurfaceAltBackground}">
+            <Grid>
+                <TextBlock Text="Select a row to see its columns side by side"
+                           Margin="32" TextWrapping="Wrap" TextAlignment="Center"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           FontSize="12.5" Foreground="{DynamicResource TextDisabled}"
+                           Visibility="{Binding HasSelection, Converter={x:Static conv:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}" />
+
+                <DockPanel Visibility="{Binding HasSelection, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+
+                    <!-- Scoped to the selected row so the state styles above apply unchanged. -->
+                    <Border DockPanel.Dock="Top" Padding="16,13" DataContext="{Binding SelectedRow}"
+                            BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                        <StackPanel>
+                            <Border Style="{StaticResource StatePill}">
+                                <TextBlock Style="{StaticResource StateLabel}" />
+                            </Border>
+                            <TextBlock Text="{Binding Key}" Margin="0,7,0,0" FontSize="14"
+                                       FontWeight="SemiBold" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextPrimary}" />
+                        </StackPanel>
+                    </Border>
+
+                    <DataGrid ItemsSource="{Binding SelectedCells}"
+                              AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal" CanUserResizeRows="False"
+                              CanUserSortColumns="False" SelectionMode="Single" AlternationCount="2">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Column" Width="1.1*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Column}" FontSize="12.5"
+                                                   TextWrapping="Wrap" VerticalAlignment="Center"
+                                                   Foreground="{Binding IsDifferent, Converter={x:Static conv:PropertyDiffToBrushConverter.Instance}}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!--
+                                A DataGridColumn is not in the visual tree, so a Header binding cannot
+                                walk up to the UserControl. The header presenter is, so the label is
+                                bound from inside a HeaderTemplate instead — same DataContext, no
+                                unresolved-source binding error.
+                            -->
+                            <DataGridTemplateColumn Width="1.4*">
+                                <DataGridTemplateColumn.HeaderTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DataContext.LeftLabel, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.HeaderTemplate>
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Left, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                   FontSize="12.5" TextWrapping="Wrap" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextPrimary}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Width="1.4*">
+                                <DataGridTemplateColumn.HeaderTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DataContext.RightLabel, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.HeaderTemplate>
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Right, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                   FontSize="12.5" TextWrapping="Wrap" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextPrimary}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </Grid>
+        </Border>
+
+        <!-- Busy overlay -->
+        <Border Grid.Column="0" Grid.ColumnSpan="5" Background="{DynamicResource Scrim}"
+                Visibility="{Binding IsBusy, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="220" Height="6" />
+                <TextBlock Text="{Binding BusyMessage}" Margin="0,12,0,0" HorizontalAlignment="Center"
+                           FontSize="12.5" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

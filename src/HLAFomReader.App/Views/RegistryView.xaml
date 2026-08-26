@@ -1,0 +1,509 @@
+<UserControl x:Class="HLAFomReader.App.Views.RegistryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:HLAFomReader.App.ViewModels"
+             xmlns:conv="clr-namespace:HLAFomReader.App.Converters"
+             d:DataContext="{d:DesignInstance Type=vm:RegistryViewModel}"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="{DynamicResource SurfaceBackground}"
+             Foreground="{DynamicResource TextPrimary}"
+             FontFamily="{StaticResource AppFontFamily}"
+             FontSize="{StaticResource FontSizeBody}">
+
+    <UserControl.Resources>
+
+        <!-- Filter chip: 22 DIP pill, accent border and SelectionBackground when active. -->
+        <Style x:Key="FilterChip" TargetType="Button">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chip"
+                                Background="{DynamicResource ControlBackground}"
+                                BorderBrush="{DynamicResource ControlBorder}"
+                                BorderThickness="1"
+                                CornerRadius="11"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource ControlBackgroundHover}" />
+                                <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource ControlBorderHover}" />
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SelectionBackground}" />
+                                <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AccentBackground}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Key/value row in the details pane. -->
+        <Style x:Key="DetailLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+        </Style>
+
+        <Style x:Key="DetailValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+
+        <Style x:Key="CountChip" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource ControlBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadiusSmall}" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Margin" Value="0,0,6,6" />
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56" />
+            <RowDefinition Height="34" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Command bar ============ -->
+        <Border Grid.Row="0" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+            <DockPanel Margin="18,0" LastChildFill="False">
+
+                <TextBlock DockPanel.Dock="Left" Text="{Binding Title}" VerticalAlignment="Center"
+                           FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}" />
+
+                <Button DockPanel.Dock="Right" Style="{StaticResource AccentButton}"
+                        Content="Register FOM…" Command="{Binding RegisterCommand}"
+                        Height="30" Padding="14,0" Margin="10,0,0,0"
+                        ToolTip="Parse one or more .fed / .xml files and store them in the registry database" />
+
+                <Grid DockPanel.Dock="Right" Width="230" Height="30" Margin="10,0,0,0">
+                    <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=150}"
+                             Tag="Search name, file or standard"
+                             VerticalContentAlignment="Center" />
+                    <Button Style="{StaticResource SubtleButton}" Content="✕" Width="22" Height="22"
+                            HorizontalAlignment="Right" Margin="0,0,4,0" Padding="0"
+                            Command="{Binding ClearSearchCommand}"
+                            Visibility="{Binding HasSearchText, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}"
+                            ToolTip="Clear search" />
+                </Grid>
+
+            </DockPanel>
+        </Border>
+
+        <!-- ============ Filter chips ============ -->
+        <Border Grid.Row="1" Background="{DynamicResource SurfaceAltBackground}"
+                BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+            <DockPanel Margin="18,0" LastChildFill="False">
+                <ItemsControl DockPanel.Dock="Left" ItemsSource="{Binding Filters}" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource FilterChip}"
+                                    Command="{Binding DataContext.SetFilterCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Label}" />
+                                    <TextBlock Text="{Binding Count}" Margin="6,0,0,0"
+                                               Foreground="{DynamicResource TextDisabled}" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock DockPanel.Dock="Right" Text="{Binding ResultSummary}" VerticalAlignment="Center"
+                           FontSize="11.5" Foreground="{DynamicResource TextSecondary}" />
+            </DockPanel>
+        </Border>
+
+        <!-- ============ Content ============ -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="420" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="392" MinWidth="300" />
+            </Grid.ColumnDefinitions>
+
+            <!-- FOM list -->
+            <Grid Grid.Column="0">
+                <DataGrid ItemsSource="{Binding EntriesView}"
+                          SelectedItem="{Binding SelectedEntry}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          HeadersVisibility="Column"
+                          SelectionMode="Single"
+                          GridLinesVisibility="Horizontal"
+                          CanUserResizeRows="False"
+                          CanUserSortColumns="True"
+                          AlternationCount="2"
+                          ToolTip="Double-click a FOM to open it in the full explorer">
+                    <!-- The single click that precedes the double has already set SelectedEntry,
+                         so the command needs no parameter. It no-ops when nothing is selected. -->
+                    <DataGrid.InputBindings>
+                        <MouseBinding MouseAction="LeftDoubleClick" Command="{Binding OpenDetailCommand}" />
+                    </DataGrid.InputBindings>
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="" Width="28" CanUserSort="False">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Ellipse Width="7" Height="7" Fill="{DynamicResource AccentBackground}"
+                                                 ToolTip="Parsed cleanly" />
+                                        <Ellipse Width="7" Height="7" Fill="{DynamicResource ValidationError}"
+                                                 ToolTip="Parsed with errors — see the Diagnostics tab"
+                                                 Visibility="{Binding HasErrors, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Name" Width="2.2*" SortMemberPath="DisplayName">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding DisplayName}" FontSize="12.5"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource TextPrimary}" />
+
+                                        <!--
+                                            The file name, and beside it what the file was compiled
+                                            from when it was compiled from anything.
+
+                                            A FOM assembled from modules and one a vendor shipped
+                                            whole are the same kind of thing once saved — one file
+                                            holding one complete model — and the row would otherwise
+                                            have no way to tell them apart. The count is on the row
+                                            because that is what a reader scans for; which modules,
+                                            in what order, is on the tooltip, because that is what
+                                            they ask once they have found it.
+                                        -->
+                                        <!--
+                                            A DockPanel, not a StackPanel: nothing in a StackPanel
+                                            gives way, so the file name took its full desired width
+                                            and the badge was clipped to "3 modul". Docked first,
+                                            the badge is measured whole and the name trims to fit —
+                                            which is the right way round, since the name has a
+                                            tooltip carrying the full path and the badge has three
+                                            characters that mean nothing cut in half.
+                                        -->
+                                        <DockPanel LastChildFill="True">
+                                            <Border DockPanel.Dock="Right"
+                                                    Margin="8,0,0,0" Padding="5,0" VerticalAlignment="Center"
+                                                    Background="{DynamicResource ControlBackground}"
+                                                    BorderBrush="{DynamicResource AccentBackground}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="{StaticResource ControlCornerRadiusSmall}"
+                                                    ToolTip="{Binding CompositionDetail}"
+                                                    Visibility="{Binding IsComposed, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+                                                <TextBlock Text="{Binding CompositionBadge}" FontSize="10"
+                                                           Foreground="{DynamicResource AccentBackground}" />
+                                            </Border>
+
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource TextDisabled}"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                       Text="{Binding FileName}" ToolTip="{Binding FilePath}" />
+                                        </DockPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Standard" Width="110" SortMemberPath="Standard">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource ControlBackground}"
+                                            BorderBrush="{DynamicResource ControlBorder}" BorderThickness="1"
+                                            CornerRadius="{StaticResource ControlCornerRadiusSmall}"
+                                            Padding="7,2" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding StandardBadge}" FontSize="11"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTextColumn Header="Version" Width="90"
+                                            Binding="{Binding Version, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                        <DataGridTextColumn Header="Classes" Width="70" Binding="{Binding ObjectClassCount}" />
+                        <DataGridTextColumn Header="Attrs" Width="70" Binding="{Binding AttributeCount}" />
+                        <DataGridTextColumn Header="Inter." Width="70" Binding="{Binding InteractionClassCount}" />
+                        <DataGridTextColumn Header="Types" Width="70" Binding="{Binding DataTypeCount}" />
+                        <DataGridTextColumn Header="Registered" Width="130"
+                                            Binding="{Binding RegisteredUtc, Converter={x:Static conv:LocalTimeConverter.Instance}}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <!-- Empty state -->
+                <Border Background="{DynamicResource SurfaceBackground}"
+                        Visibility="{Binding IsEmpty, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="380">
+                        <TextBlock Text="No FOMs registered yet" FontSize="15" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                        <TextBlock Margin="0,8,0,0" TextAlignment="Center" TextWrapping="Wrap"
+                                   FontSize="12.5" Foreground="{DynamicResource TextSecondary}"
+                                   Text="Register an HLA 1.3 FED file (.fed) or an IEEE 1516 / HLA Evolved FOM (.xml). Everything the parser understands is stored in the registry database so it can be compared later." />
+                        <Button Style="{StaticResource AccentButton}" Content="Register FOM…"
+                                Command="{Binding RegisterCommand}" Height="30" Padding="14,0"
+                                HorizontalAlignment="Center" Margin="0,16,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <GridSplitter Grid.Column="1" Width="1" HorizontalAlignment="Stretch"
+                          Background="{DynamicResource Divider}" ResizeBehavior="PreviousAndNext" />
+
+            <!-- Detail pane -->
+            <Border Grid.Column="2" Background="{DynamicResource SurfaceAltBackground}">
+                <Grid>
+                    <TextBlock Text="Select a FOM to see what was parsed"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="12.5" Foreground="{DynamicResource TextDisabled}"
+                               Visibility="{Binding HasSelection, Converter={x:Static conv:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}" />
+
+                    <DockPanel Visibility="{Binding HasSelection, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+
+                        <Border DockPanel.Dock="Top" Padding="16,14" BorderBrush="{DynamicResource Divider}"
+                                BorderThickness="0,0,0,1">
+                            <StackPanel>
+                                <TextBlock Text="{Binding SelectedEntry.DisplayName}" FontSize="14"
+                                           FontWeight="SemiBold" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextPrimary}" />
+                                <TextBlock Margin="0,3,0,0" FontSize="12" TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextSecondary}"
+                                           Text="{Binding SelectedEntry.FilePath}"
+                                           ToolTip="{Binding SelectedEntry.FilePath}" />
+                                <TextBlock Margin="0,6,0,0" FontSize="11.5"
+                                           Foreground="{DynamicResource AccentBackground}"
+                                           Text="{Binding SelectedEntry.StandardDisplayName}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border DockPanel.Dock="Bottom" Padding="16,12" BorderBrush="{DynamicResource Divider}"
+                                BorderThickness="0,1,0,0">
+                            <WrapPanel>
+                                <Button Style="{StaticResource SubtleButton}" Content="Re-parse" Height="28"
+                                        Padding="12,0" Margin="0,0,8,0" Command="{Binding ReparseCommand}"
+                                        ToolTip="Read the file again from disk and replace what is stored" />
+                                <Button Style="{StaticResource SubtleButton}" Content="Open folder" Height="28"
+                                        Padding="12,0" Margin="0,0,8,0" Command="{Binding OpenContainingFolderCommand}" />
+                                <Button Style="{StaticResource SubtleButton}" Content="Copy path" Height="28"
+                                        Padding="12,0" Margin="0,0,8,0" Command="{Binding CopyPathCommand}" />
+                                <Button Style="{StaticResource SubtleButton}" Content="Unregister" Height="28"
+                                        Padding="12,0" Command="{Binding UnregisterCommand}"
+                                        Foreground="{DynamicResource ValidationError}"
+                                        ToolTip="Remove from the registry. The file on disk is left alone." />
+                            </WrapPanel>
+                        </Border>
+
+                        <TabControl Margin="0" BorderThickness="0" Background="Transparent">
+
+                            <TabItem Header="Details">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,14">
+                                    <StackPanel>
+                                        <WrapPanel Margin="0,0,0,10">
+                                            <Border Style="{StaticResource CountChip}">
+                                                <TextBlock FontSize="11.5">
+                                                    <Run Text="{Binding SelectedEntry.ObjectClassCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                                    <Run Text=" object classes" Foreground="{DynamicResource TextSecondary}" />
+                                                </TextBlock>
+                                            </Border>
+                                            <Border Style="{StaticResource CountChip}">
+                                                <TextBlock FontSize="11.5">
+                                                    <Run Text="{Binding SelectedEntry.AttributeCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                                    <Run Text=" attributes" Foreground="{DynamicResource TextSecondary}" />
+                                                </TextBlock>
+                                            </Border>
+                                            <Border Style="{StaticResource CountChip}">
+                                                <TextBlock FontSize="11.5">
+                                                    <Run Text="{Binding SelectedEntry.InteractionClassCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                                    <Run Text=" interactions" Foreground="{DynamicResource TextSecondary}" />
+                                                </TextBlock>
+                                            </Border>
+                                            <Border Style="{StaticResource CountChip}">
+                                                <TextBlock FontSize="11.5">
+                                                    <Run Text="{Binding SelectedEntry.ParameterCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                                    <Run Text=" parameters" Foreground="{DynamicResource TextSecondary}" />
+                                                </TextBlock>
+                                            </Border>
+                                            <Border Style="{StaticResource CountChip}">
+                                                <TextBlock FontSize="11.5">
+                                                    <Run Text="{Binding SelectedEntry.DataTypeCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                                    <Run Text=" datatypes" Foreground="{DynamicResource TextSecondary}" />
+                                                </TextBlock>
+                                            </Border>
+                                            <Border Style="{StaticResource CountChip}">
+                                                <TextBlock FontSize="11.5">
+                                                    <Run Text="{Binding SelectedEntry.DimensionCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                                    <Run Text=" dimensions" Foreground="{DynamicResource TextSecondary}" />
+                                                </TextBlock>
+                                            </Border>
+                                        </WrapPanel>
+
+                                        <TextBlock Style="{StaticResource DetailLabel}" Text="MODEL NAME" />
+                                        <TextBlock Style="{StaticResource DetailValue}"
+                                                   Text="{Binding SelectedEntry.IdentificationName, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+
+                                        <TextBlock Style="{StaticResource DetailLabel}" Text="TYPE / VERSION" />
+                                        <TextBlock Style="{StaticResource DetailValue}">
+                                            <Run Text="{Binding SelectedEntry.IdentificationType, Mode=OneWay, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                            <Run Text=" · " Foreground="{DynamicResource TextDisabled}" />
+                                            <Run Text="{Binding SelectedEntry.Version, Mode=OneWay, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                        </TextBlock>
+
+                                        <TextBlock Style="{StaticResource DetailLabel}" Text="MODIFICATION DATE" />
+                                        <TextBlock Style="{StaticResource DetailValue}"
+                                                   Text="{Binding SelectedEntry.ModificationDate, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+
+                                        <TextBlock Style="{StaticResource DetailLabel}" Text="PURPOSE" />
+                                        <TextBlock Style="{StaticResource DetailValue}"
+                                                   Text="{Binding SelectedEntry.Purpose, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+
+                                        <TextBlock Style="{StaticResource DetailLabel}" Text="APPLICATION DOMAIN" />
+                                        <TextBlock Style="{StaticResource DetailValue}"
+                                                   Text="{Binding SelectedEntry.ApplicationDomain, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+
+                                        <TextBlock Style="{StaticResource DetailLabel}" Text="DESCRIPTION" />
+                                        <TextBlock Style="{StaticResource DetailValue}"
+                                                   Text="{Binding SelectedEntry.Description, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+
+                                        <TextBlock Style="{StaticResource DetailLabel}" Text="SECURITY CLASSIFICATION" />
+                                        <TextBlock Style="{StaticResource DetailValue}"
+                                                   Text="{Binding SelectedEntry.SecurityClassification, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+
+                                        <TextBlock Style="{StaticResource DetailLabel}" Text="FILE" />
+                                        <TextBlock Style="{StaticResource DetailValue}">
+                                            <Run Text="{Binding SelectedEntry.FileSizeBytes, Mode=OneWay, Converter={x:Static conv:ByteSizeConverter.Instance}}" />
+                                            <Run Text=" · SHA-256 " Foreground="{DynamicResource TextDisabled}" />
+                                            <Run Text="{Binding SelectedEntry.FileHash, Mode=OneWay, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                 Foreground="{DynamicResource TextDisabled}" />
+                                        </TextBlock>
+
+                                        <TextBlock Style="{StaticResource DetailLabel}" Text="LAST PARSED" />
+                                        <TextBlock Style="{StaticResource DetailValue}"
+                                                   Text="{Binding SelectedEntry.LastParsedUtc, Converter={x:Static conv:LocalTimeConverter.Instance}}" />
+
+                                        <Border Background="{DynamicResource ControlBackground}"
+                                                BorderBrush="{DynamicResource ValidationError}" BorderThickness="1"
+                                                CornerRadius="{StaticResource ControlCornerRadius}" Padding="10,8"
+                                                Visibility="{Binding SelectedEntry.IsMissing, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+                                            <TextBlock TextWrapping="Wrap" FontSize="12"
+                                                       Foreground="{DynamicResource ValidationError}"
+                                                       Text="The source file is no longer on disk. The parsed copy in the registry is still usable for comparison." />
+                                        </Border>
+
+                                        <Border Background="{DynamicResource ControlBackground}"
+                                                BorderBrush="{DynamicResource ControlBorderHover}" BorderThickness="1"
+                                                CornerRadius="{StaticResource ControlCornerRadius}" Padding="10,8"
+                                                Margin="0,8,0,0"
+                                                Visibility="{Binding SelectedEntry.IsStale, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+                                            <TextBlock TextWrapping="Wrap" FontSize="12"
+                                                       Foreground="{DynamicResource TextSecondary}"
+                                                       Text="The file on disk has changed since it was registered. Re-parse to pick up the changes." />
+                                        </Border>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </TabItem>
+
+                            <TabItem Header="Structure">
+                                <TreeView ItemsSource="{Binding Structure}" BorderThickness="0"
+                                          Background="Transparent" Padding="8,6">
+                                    <TreeView.ItemContainerStyle>
+                                        <Style TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+                                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                        </Style>
+                                    </TreeView.ItemContainerStyle>
+                                    <TreeView.ItemTemplate>
+                                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Name}" FontSize="12.5"
+                                                           Foreground="{DynamicResource TextPrimary}" />
+                                                <TextBlock Text="{Binding Kind}" Margin="8,0,0,0" FontSize="10"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextDisabled}" />
+                                                <TextBlock Text="{Binding Detail}" Margin="8,0,0,0" FontSize="11"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextSecondary}" />
+                                            </StackPanel>
+                                        </HierarchicalDataTemplate>
+                                    </TreeView.ItemTemplate>
+                                </TreeView>
+                            </TabItem>
+
+                            <TabItem Header="Diagnostics">
+                                <Grid>
+                                    <TextBlock Text="No parse diagnostics — the file was read cleanly."
+                                               Margin="16" TextWrapping="Wrap" FontSize="12.5"
+                                               Foreground="{DynamicResource TextDisabled}"
+                                               Visibility="{Binding Diagnostics.Count, Converter={x:Static conv:CountToVisibilityConverter.Instance}, ConverterParameter=invert}" />
+
+                                    <ListBox ItemsSource="{Binding Diagnostics}" BorderThickness="0"
+                                             Background="Transparent"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             Visibility="{Binding Diagnostics.Count, Converter={x:Static conv:CountToVisibilityConverter.Instance}}">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                <Setter Property="Height" Value="Auto" />
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Margin="4,6">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding Severity}" FontSize="10.5"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource AccentBackground}" />
+                                                        <TextBlock Text="{Binding Line, StringFormat=' line {0}'}"
+                                                                   FontSize="10.5"
+                                                                   Foreground="{DynamicResource TextDisabled}" />
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap"
+                                                               FontSize="12" Margin="0,2,0,0"
+                                                               Foreground="{DynamicResource TextPrimary}" />
+                                                    <TextBlock Text="{Binding Path}" TextWrapping="Wrap"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource TextDisabled}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
+                            </TabItem>
+
+                        </TabControl>
+                    </DockPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Busy overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="3" Background="{DynamicResource Scrim}"
+                Visibility="{Binding IsBusy, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="220" Height="6" />
+                <TextBlock Text="{Binding BusyMessage}" Margin="0,12,0,0" HorizontalAlignment="Center"
+                           FontSize="12.5" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

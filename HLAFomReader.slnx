@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HLAFomReader.App/HLAFomReader.App.csproj" />
+    <Project Path="src/HLAFomReader.Core/HLAFomReader.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HLAFomReader.App.Tests/HLAFomReader.App.Tests.csproj" />
+    <Project Path="tests/HLAFomReader.Core.Tests/HLAFomReader.Core.Tests.csproj" />
+  </Folder>
+</Solution>

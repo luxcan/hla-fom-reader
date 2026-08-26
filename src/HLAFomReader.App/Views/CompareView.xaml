@@ -1,0 +1,491 @@
+<UserControl x:Class="HLAFomReader.App.Views.CompareView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:HLAFomReader.App.ViewModels"
+             xmlns:views="clr-namespace:HLAFomReader.App.Views"
+             xmlns:conv="clr-namespace:HLAFomReader.App.Converters"
+             xmlns:cmp="clr-namespace:HLAFomReader.Core.Comparison;assembly=HLAFomReader.Core"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:CompareViewModel}"
+             Background="{DynamicResource SurfaceBackground}"
+             Foreground="{DynamicResource TextPrimary}"
+             FontFamily="{StaticResource AppFontFamily}"
+             FontSize="{StaticResource FontSizeBody}">
+
+    <UserControl.Resources>
+
+        <Style x:Key="OptionCheck" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+            <Setter Property="Margin" Value="0,0,16,0" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="PickerLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+
+        <!--
+            The status badge, worded and coloured exactly as the attribute map's. The two screens
+            answer different questions, but a reader moving between them should not have to learn a
+            second set of words for the same five outcomes.
+        -->
+        <Style x:Key="ClassStatusBadge" TargetType="Border">
+            <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadiusSmall}" />
+            <Setter Property="Padding" Value="7,2" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:ClassMapStatus.Changed}">
+                    <Setter Property="Background" Value="{DynamicResource StatusChanged}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:ClassMapStatus.OnlyInLeft}">
+                    <Setter Property="Background" Value="{DynamicResource StatusRemoved}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:ClassMapStatus.OnlyInRight}">
+                    <Setter Property="Background" Value="{DynamicResource StatusAdded}" />
+                </DataTrigger>
+                <!-- A rename encodes identically, so it reads as Same; the two name columns already
+                     show that the spelling moved. -->
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:ClassMapStatus.Renamed}">
+                    <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ClassStatusLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource StatusForeground}" />
+            <Setter Property="Text" Value="Same" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:ClassMapStatus.Changed}">
+                    <Setter Property="Text" Value="Changed" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:ClassMapStatus.OnlyInLeft}">
+                    <Setter Property="Text" Value="Only in A" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:ClassMapStatus.OnlyInRight}">
+                    <Setter Property="Text" Value="Only in B" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:ClassMapStatus.Renamed}">
+                    <Setter Property="Text" Value="Same" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ClassNameCell" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+
+        <Style x:Key="ClassMutedCell" TargetType="TextBlock" BasedOn="{StaticResource ClassNameCell}">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+        </Style>
+
+        <!-- The reason reads as prose, so it wraps rather than truncating at the ellipsis. -->
+        <Style x:Key="ClassWhyCell" TargetType="TextBlock" BasedOn="{StaticResource ClassNameCell}">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ FOM pickers (shared by both tabs) ============ -->
+        <Border Grid.Row="0" Padding="18,14" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <TextBlock Style="{StaticResource PickerLabel}" Text="FOM A  ·  BASELINE" />
+                    <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding Left}"
+                              Height="30" DisplayMemberPath="DisplayName" />
+                    <TextBlock Text="{Binding LeftSummary}" Margin="0,6,0,0" FontSize="11"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextDisabled}" />
+                </StackPanel>
+
+                <Button Grid.Column="1" Style="{StaticResource SubtleButton}" Content="⇄"
+                        Width="32" Height="30" Margin="12,17,12,0" VerticalAlignment="Top"
+                        Command="{Binding SwapCommand}" ToolTip="Swap A and B" />
+
+                <StackPanel Grid.Column="2">
+                    <TextBlock Style="{StaticResource PickerLabel}" Text="FOM B  ·  COMPARED AGAINST" />
+                    <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding Right}"
+                              Height="30" DisplayMemberPath="DisplayName" />
+                    <TextBlock Text="{Binding RightSummary}" Margin="0,6,0,0" FontSize="11"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextDisabled}" />
+                </StackPanel>
+
+                <!--
+                    Compare alone. The report export that used to sit beside it wrote the whole diff
+                    tree, counted per property across every OMT table — a different unit from anything
+                    this screen shows, so its headline total and the one above the grid disagreed by
+                    an order of magnitude on a cross-standard pair, correctly and confusingly. The
+                    export worth having is the attribute map's CSV, which is on the tab that produces
+                    the worksheet.
+                -->
+                <Button Grid.Column="3" Style="{StaticResource AccentButton}" Content="Compare"
+                        Height="30" Padding="16,0" Margin="14,17,0,0" VerticalAlignment="Top"
+                        Command="{Binding CompareCommand}" IsDefault="True" />
+            </Grid>
+        </Border>
+
+        <TabControl Grid.Row="1" BorderThickness="0" Background="Transparent" Padding="0">
+
+            <!-- The attribute data map leads: it is the view that answers "what data changed and
+                 how do I remap it", which is what this screen is for. -->
+            <TabItem Header="Attribute data" IsSelected="{Binding AttributeMap.IsActive, Mode=TwoWay}">
+                <views:AttributeMapView DataContext="{Binding AttributeMap}" />
+            </TabItem>
+
+            <!-- ==================== Tab 1: class-level difference tree ====================
+                 Scoped to the object and interaction classes. Attributes are not repeated here —
+                 the attribute map is the better report of them — so this tree answers "which
+                 classes were added, dropped, renamed or re-declared", and nothing else.
+                 See CompareViewModel.CollectClassNodes. -->
+            <TabItem Header="Classes">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Options -->
+                    <Border Grid.Row="0" Background="{DynamicResource SurfaceAltBackground}"
+                            BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1" Padding="18,9">
+                        <StackPanel>
+                            <!-- How deep to compare each matched element. Name + datatype by default. -->
+                            <WrapPanel Margin="0,0,0,8">
+                                <TextBlock Text="COMPARE" FontSize="10" FontWeight="SemiBold" Margin="0,0,14,0"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
+                                <RadioButton GroupName="Depth" Content="Names only" Margin="0,0,14,0"
+                                             FontSize="11.5" VerticalAlignment="Center"
+                                             IsChecked="{Binding IsStructureDepth}"
+                                             ToolTip="Report only what exists in one FOM and not the other" />
+                                <RadioButton GroupName="Depth" Content="Names + datatypes" Margin="0,0,14,0"
+                                             FontSize="11.5" VerticalAlignment="Center"
+                                             IsChecked="{Binding IsDataTypeDepth}"
+                                             ToolTip="Compare which elements exist and how they are typed — what actually decides whether two FOMs interoperate. Other properties are still shown in the detail pane, but do not count as differences." />
+                                <RadioButton GroupName="Depth" Content="Everything" Margin="0,0,14,0"
+                                             FontSize="11.5" VerticalAlignment="Center"
+                                             IsChecked="{Binding IsFullDepth}"
+                                             ToolTip="Compare every OMT property: sharing, ownership, update type, accuracy, prose. Exhaustive and very loud." />
+                                <TextBlock Text="{Binding DepthSummary}" FontSize="11" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextDisabled}" />
+                            </WrapPanel>
+
+                            <!--
+                                One switch, because only one of the seven was a real choice.
+
+                                Two of the others had to stay on and did nothing but harm when turned
+                                off: without root-name matching ObjectRoot and HLAobjectRoot never
+                                line up, so a 1.3-versus-1516 run reports every class on both sides as
+                                missing from the other, and transport / order spelling does the same
+                                for reliable versus HLAreliable. They are now fixed at the
+                                ComparisonOptions defaults, which is what they already were.
+
+                                Three more were dead weight on this screen: "Ignore case" matters only
+                                to a vendor who renamed by capitalisation alone, "Skip datatypes" hides
+                                the tables a remap is about, and "Skip MOM" filters a subtree these
+                                FOMs do not carry. "Ignore semantics" was closer to a trap — prose is
+                                only compared at Everything depth, so below it the box did nothing at
+                                all while looking like it did.
+
+                                What remains is the one that changes the answer on the pair this app
+                                exists for. See ComparisonOptions.IgnoreInexpressibleProperties.
+                            -->
+                            <WrapPanel>
+                                <CheckBox Style="{StaticResource OptionCheck}"
+                                          Content="Only compare what both standards can express"
+                                          IsChecked="{Binding IgnoreInexpressibleProperties}"
+                                          ToolTip="HLA 1.3 has no dataType, sharing, updateType, ownership, dimensions or semantics, so a strict 1.3-vs-1516 diff marks every attribute as modified. Tick this to hide those format gaps and see only the differences somebody actually authored. The reason still shows on each row." />
+                            </WrapPanel>
+
+                            <!--
+                                Folded away by default. On a cross-standard pair the comparer has
+                                eight or nine things to say, every one of them worth reading once and
+                                none of them worth eight rows of permanent chrome above the tree they
+                                describe. The header keeps the count visible so they are never
+                                silently lost, and the caveat that matters most on a 1.3-to-1516 run
+                                — how much of the total is format gap rather than authored change —
+                                is repeated on the summary strip below, where it stays in sight.
+                            -->
+                            <Expander Margin="0,8,0,0" IsExpanded="False"
+                                      Foreground="{DynamicResource TextSecondary}"
+                                      Visibility="{Binding Advisories.Count, Converter={x:Static conv:CountToVisibilityConverter.Instance}}">
+                                <Expander.Header>
+                                    <TextBlock FontSize="11" Foreground="{DynamicResource TextSecondary}">
+                                        <Run Text="{Binding Advisories.Count, Mode=OneWay}" FontWeight="SemiBold" />
+                                        <Run Text="notes about how this comparison was made" />
+                                    </TextBlock>
+                                </Expander.Header>
+
+                                <ItemsControl ItemsSource="{Binding Advisories}" Margin="0,6,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource ControlBackground}"
+                                                    BorderBrush="{DynamicResource AccentBackground}"
+                                                    BorderThickness="2,0,0,0" Padding="10,6" Margin="0,0,0,4">
+                                                <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="11.5"
+                                                           Foreground="{DynamicResource TextSecondary}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Expander>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ============ Options changed since the run ============
+                         Between the switches and the figures, because it is the one place a reader
+                         passes through on the way from changing a setting to reading a number.
+
+                         The alternative was to throw the result away the moment a switch moved, the
+                         way changing a picker does. That is right for a picker — the figures then
+                         answer about the wrong two FOMs — and wrong here: these figures still answer
+                         about the right pair, only under superseded rules, so they are worth keeping
+                         on screen while the next run is being decided on. On an RPR-sized pair a
+                         re-run is not free, and a mis-clicked radio button should not cost one.
+
+                         Collapsed whenever the options match the run, which includes changing a
+                         switch and changing it straight back. See CompareViewModel.IsResultStale. -->
+                    <Border x:Name="StaleNotice" Grid.Row="1" Padding="18,8"
+                            Background="{DynamicResource ControlBackground}"
+                            BorderBrush="{DynamicResource AccentBackground}" BorderThickness="0,0,0,2"
+                            Visibility="{Binding IsResultStale, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+                        <DockPanel LastChildFill="True">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource AccentButton}"
+                                    Content="Re-compare" Height="24" Padding="14,0" Margin="14,0,0,0"
+                                    VerticalAlignment="Center" Command="{Binding CompareCommand}" />
+                            <TextBlock Text="{Binding StaleNote}" VerticalAlignment="Center"
+                                       TextWrapping="Wrap" FontSize="11.5"
+                                       Foreground="{DynamicResource TextSecondary}" />
+                        </DockPanel>
+                    </Border>
+
+                    <!-- ============ Status chips, count, search ============
+                         Two lines inside one border rather than one line, so the strip carries only
+                         what it can size: a headline, four chips and a search box.
+
+                         The format-gap caveat used to sit between the headline and the chips, and on
+                         a 1.3-to-1516 pair it is a sentence — 368 DIP of one, better than a quarter
+                         of the strip. Below about an 1150 DIP window that left the search box, which
+                         docks right and takes what is left, with nothing: it kept its 200 DIP width
+                         and was arranged past the end of the panel, entirely off screen by 950. The
+                         chips were never the casualty, whatever an earlier reading of this said.
+
+                         On its own line the caveat has the width to be read rather than truncated,
+                         and it stays directly under the number it qualifies. -->
+                    <Border Grid.Row="2" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                        <StackPanel>
+                            <DockPanel Height="34" Margin="18,0" LastChildFill="False">
+
+                                <TextBlock DockPanel.Dock="Left" Text="{Binding ResultHeadline}" VerticalAlignment="Center"
+                                           FontSize="12" FontWeight="SemiBold" Margin="0,0,14,0"
+                                           Foreground="{DynamicResource TextPrimary}" />
+
+                                <!-- Same wording and same order as the attribute map's chips, so moving
+                                     between the two tabs does not mean learning a second vocabulary. -->
+                                <ToggleButton DockPanel.Dock="Left" IsChecked="{Binding ShowChanged}" Height="22"
+                                              Padding="9,0" Margin="0,0,6,0" FontSize="11.5"
+                                              VerticalAlignment="Center"
+                                              ToolTip="Classes on both sides with something different about them">
+                                    <TextBlock>
+                                        <Run Text="~ Changed " />
+                                        <Run Text="{Binding ChangedCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                    </TextBlock>
+                                </ToggleButton>
+
+                                <ToggleButton DockPanel.Dock="Left" IsChecked="{Binding ShowOnlyLeft}" Height="22"
+                                              Padding="9,0" Margin="0,0,6,0" FontSize="11.5"
+                                              VerticalAlignment="Center" ToolTip="Classes in FOM A that FOM B has nowhere to put">
+                                    <TextBlock>
+                                        <Run Text="− Only in A " />
+                                        <Run Text="{Binding OnlyLeftCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                    </TextBlock>
+                                </ToggleButton>
+
+                                <ToggleButton DockPanel.Dock="Left" IsChecked="{Binding ShowOnlyRight}" Height="22"
+                                              Padding="9,0" Margin="0,0,6,0" FontSize="11.5"
+                                              VerticalAlignment="Center" ToolTip="Classes in FOM B that nothing in FOM A feeds">
+                                    <TextBlock>
+                                        <Run Text="+ Only in B " />
+                                        <Run Text="{Binding OnlyRightCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                    </TextBlock>
+                                </ToggleButton>
+
+                                <ToggleButton DockPanel.Dock="Left" IsChecked="{Binding ShowSame}" Height="22"
+                                              Padding="9,0" Margin="0,0,6,0" FontSize="11.5"
+                                              VerticalAlignment="Center"
+                                              ToolTip="Classes that match, renames included — a rename costs nothing">
+                                    <TextBlock>
+                                        <Run Text="= Same " />
+                                        <Run Text="{Binding SameCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                    </TextBlock>
+                                </ToggleButton>
+
+                                <Grid DockPanel.Dock="Right" Width="200" Height="24" Margin="0,0,10,0" VerticalAlignment="Center">
+                                    <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}"
+                                             Tag="Filter class or reason" FontSize="11.5" Height="24"
+                                             VerticalContentAlignment="Center" />
+                                </Grid>
+
+                            </DockPanel>
+
+                        <TextBlock Text="{Binding FormatGapNote}" Margin="18,0,18,9" TextWrapping="Wrap"
+                                   FontSize="11.5" Foreground="{DynamicResource AccentBackground}"
+                                   Visibility="{Binding HasFormatGapNote, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}"
+                                   ToolTip="Differences that exist only because one standard cannot express the concept" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ============ The class list ============
+                         Flat, one row per class, for the same reason the attribute map is flat. A
+                         hierarchy is the right shape for reading one FOM and the wrong shape for
+                         comparing two: the interesting rows are scattered across five levels, most
+                         of what is on screen is containers that differ only because something under
+                         them does, and a coloured square on a container cannot say what is wrong.
+                         The Why column is the point of the screen. -->
+                    <Grid Grid.Row="3">
+                        <DataGrid ItemsSource="{Binding ClassRows}" SelectedItem="{Binding SelectedClass}"
+                                  AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                                  SelectionMode="Single" AlternationCount="2"
+                                  GridLinesVisibility="Horizontal" CanUserResizeRows="False"
+                                  CanUserSortColumns="True"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  Visibility="{Binding HasVisibleNodes, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+                            <DataGrid.Columns>
+
+                                <DataGridTemplateColumn Header="Status" Width="110" SortMemberPath="Status">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource ClassStatusBadge}">
+                                                <TextBlock Style="{StaticResource ClassStatusLabel}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="Kind" Width="86" SortMemberPath="IsInteraction">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock>
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock" BasedOn="{StaticResource ClassMutedCell}">
+                                                        <Setter Property="Text" Value="Object" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsInteraction}" Value="True">
+                                                                <Setter Property="Text" Value="Interaction" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="Class in FOM A" Width="1.5*" SortMemberPath="LeftName">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Style="{StaticResource ClassNameCell}"
+                                                       Text="{Binding LeftName, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                       ToolTip="{Binding LeftName}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="Class in FOM B" Width="1.5*" SortMemberPath="RightName">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Style="{StaticResource ClassNameCell}"
+                                                       Text="{Binding RightName, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                       ToolTip="{Binding RightName}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTextColumn Header="Members A" Width="82" Binding="{Binding LeftMemberCount}"
+                                                    ElementStyle="{StaticResource ClassMutedCell}" />
+                                <DataGridTextColumn Header="Members B" Width="82" Binding="{Binding RightMemberCount}"
+                                                    ElementStyle="{StaticResource ClassMutedCell}" />
+
+                                <!-- Why the row carries the badge it carries. Without this the screen
+                                     is a wall of amber squares that a reader cannot act on. -->
+                                <DataGridTemplateColumn Header="Why" Width="2.4*" SortMemberPath="Why">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Style="{StaticResource ClassWhyCell}"
+                                                       Text="{Binding Why}" ToolTip="{Binding Why}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock Text="{Binding EmptyTreeMessage}" Margin="32" TextWrapping="Wrap"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   FontSize="12.5" Foreground="{DynamicResource TextDisabled}"
+                                   Visibility="{Binding HasVisibleNodes, Converter={x:Static conv:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}" />
+                    </Grid>
+
+                </Grid>
+            </TabItem>
+
+            <!-- ==================== Tab 2: raw rows out of SQLite ==================== -->
+            <!-- IsSelected drives StoredRows.IsActive so the per-table row counts are only read
+                 when this tab is actually on screen. -->
+            <TabItem Header="Stored rows" IsSelected="{Binding StoredRows.IsActive, Mode=TwoWay}">
+                <views:StoredRowsView DataContext="{Binding StoredRows}" />
+            </TabItem>
+
+        </TabControl>
+
+        <!-- Not enough FOMs registered -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="{DynamicResource SurfaceBackground}"
+                Visibility="{Binding HasEnoughSources, Converter={x:Static conv:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="400">
+                <TextBlock Text="Register two FOMs first" FontSize="15" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                <TextBlock Margin="0,8,0,0" TextAlignment="Center" TextWrapping="Wrap" FontSize="12.5"
+                           Foreground="{DynamicResource TextSecondary}"
+                           Text="Comparison needs two entries in the registry. They do not have to use the same HLA standard — an HLA 1.3 FED can be compared against a 1516 / Evolved FOM." />
+            </StackPanel>
+        </Border>
+
+        <!-- Busy overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="{DynamicResource Scrim}"
+                Visibility="{Binding IsBusy, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="220" Height="6" />
+                <TextBlock Text="{Binding BusyMessage}" Margin="0,12,0,0" HorizontalAlignment="Center"
+                           FontSize="12.5" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

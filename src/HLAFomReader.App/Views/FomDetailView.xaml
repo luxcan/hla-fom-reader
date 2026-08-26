@@ -1,0 +1,444 @@
+<UserControl x:Class="HLAFomReader.App.Views.FomDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:HLAFomReader.App.ViewModels"
+             xmlns:conv="clr-namespace:HLAFomReader.App.Converters"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:FomDetailViewModel}"
+             Background="{DynamicResource SurfaceBackground}"
+             Foreground="{DynamicResource TextPrimary}"
+             FontFamily="{StaticResource AppFontFamily}"
+             FontSize="{StaticResource FontSizeBody}">
+
+    <UserControl.Resources>
+
+        <Style x:Key="MemberCellText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+
+        <!--
+            A datatype name opens the inspector, wherever it appears on this screen. Faint on
+            purpose: an underline on hover and nothing at rest, so a tree of several hundred
+            datatypes still reads as a list rather than as a wall of buttons.
+        -->
+        <Style x:Key="DataTypeLink" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent">
+                            <TextBlock x:Name="Text" Text="{TemplateBinding Content}"
+                                       FontSize="12.5" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"
+                                       Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Text" Property="TextDecorations" Value="Underline" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Command bar ============ -->
+        <Border Grid.Row="0" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+            <!--
+                Declaration order is load-bearing. A DockPanel gives each child the width it asks for,
+                in the order they are written, and passes what is left to the next one — so the title
+                block has to come last. Written second, as it was, its subtitle asked for the width of
+                "HLA 1.3 · v1-1 · MAK-RPR1-1-1.fed · 48 classes · 277 attributes · …" — 556 DIP on a
+                real FED — and got it, because it fitted in what the Back button had not used. That
+                left the four controls after it sharing a rectangle too narrow to hold them, and they
+                were arranged on top of one another: below about 1200 DIP the search box ended up
+                underneath Expand all. Nothing threw and nothing logged; it simply drew wrong.
+
+                Last, with LastChildFill, the title is measured against whatever the fixed controls
+                did not take, so its TextTrimming finally has a width to trim to. Every other control
+                here is a fixed size, which is why they can all be declared ahead of it.
+            -->
+            <DockPanel Margin="18,0" LastChildFill="True">
+
+                <Button DockPanel.Dock="Left" Style="{StaticResource SubtleButton}" Content="← Back"
+                        Height="30" Padding="12,0" Margin="0,0,14,0" VerticalAlignment="Center"
+                        Command="{Binding CloseCommand}"
+                        ToolTip="Back to the registry list" />
+
+                <Button DockPanel.Dock="Right" Style="{StaticResource AccentButton}" Content="Export to Excel…"
+                        Height="30" Padding="14,0" VerticalAlignment="Center"
+                        Command="{Binding ExportHierarchyCommand}"
+                        ToolTip="Write the object and interaction class hierarchies to an .xlsx workbook" />
+
+                <Button DockPanel.Dock="Right" Style="{StaticResource SubtleButton}" Content="Collapse all"
+                        Height="30" Padding="11,0" Margin="0,0,10,0" VerticalAlignment="Center"
+                        Command="{Binding CollapseAllCommand}" />
+                <Button DockPanel.Dock="Right" Style="{StaticResource SubtleButton}" Content="Expand all"
+                        Height="30" Padding="11,0" Margin="0,0,6,0" VerticalAlignment="Center"
+                        Command="{Binding ExpandAllCommand}" />
+
+                <Grid DockPanel.Dock="Right" Width="230" Height="30" Margin="14,0,10,0"
+                      VerticalAlignment="Center">
+                    <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}"
+                             Tag="Search classes, attributes, datatypes"
+                             VerticalContentAlignment="Center" />
+                    <Button Style="{StaticResource SubtleButton}" Content="✕" Width="22" Height="22"
+                            HorizontalAlignment="Right" Margin="0,0,4,0" Padding="0"
+                            Command="{Binding ClearSearchCommand}"
+                            Visibility="{Binding HasSearchText, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}"
+                            ToolTip="Clear search" />
+                </Grid>
+
+                <!-- Last on purpose: see the note above. -->
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextPrimary}" />
+                    <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,1,0,0"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextDisabled}" />
+                </StackPanel>
+
+            </DockPanel>
+        </Border>
+
+        <!-- ============ Explorer ============ -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="320" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="1.4*" MinWidth="420" />
+            </Grid.ColumnDefinitions>
+
+            <Grid Grid.Column="0">
+                <TreeView ItemsSource="{Binding Tree}" BorderThickness="0" Background="Transparent"
+                          Padding="10,8"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <TreeView.ItemContainerStyle>
+                        <Style TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+                        </Style>
+                    </TreeView.ItemContainerStyle>
+                    <TreeView.ItemTemplate>
+                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                            <!-- Full-width row: name left, kind and detail pinned right. -->
+                            <Grid HorizontalAlignment="Stretch">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- A datatype node opens the inspector; every other node is a
+                                     heading or a class and stays plain text. IsEnabled is bound
+                                     rather than left to CanExecute so a group heading, which would
+                                     resolve to nothing, offers no click at all. -->
+                                <Button Grid.Column="0" Style="{StaticResource DataTypeLink}"
+                                        Content="{Binding Name}"
+                                        IsEnabled="{Binding IsDataType}"
+                                        Command="{Binding DataContext.ShowDataTypeCommand,
+                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding Name}"
+                                        ToolTip="{Binding Name}" />
+
+                                <TextBlock Grid.Column="1" Text="{Binding Kind}" Margin="12,0,0,0"
+                                           FontSize="10" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextDisabled}" />
+
+                                <TextBlock Grid.Column="2" Text="{Binding Detail}" Margin="10,0,0,0"
+                                           FontSize="11" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondary}" />
+                            </Grid>
+                        </HierarchicalDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+
+                <TextBlock Text="{Binding EmptyMessage}" Margin="32" TextWrapping="Wrap"
+                           TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           FontSize="12.5" Foreground="{DynamicResource TextDisabled}"
+                           Visibility="{Binding IsEmpty, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}" />
+            </Grid>
+
+            <GridSplitter Grid.Column="1" Width="1" HorizontalAlignment="Stretch"
+                          Background="{DynamicResource Divider}" ResizeBehavior="PreviousAndNext" />
+
+            <Border Grid.Column="2" Background="{DynamicResource SurfaceAltBackground}">
+                <Grid>
+                    <TextBlock Text="Select a class, interaction or datatype to see what it holds"
+                               Margin="32" TextWrapping="Wrap" TextAlignment="Center"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="12.5" Foreground="{DynamicResource TextDisabled}"
+                               Visibility="{Binding HasSelection, Converter={x:Static conv:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}" />
+
+                    <DockPanel Visibility="{Binding HasSelection, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+
+                        <Border DockPanel.Dock="Top" Padding="16,13" BorderBrush="{DynamicResource Divider}"
+                                BorderThickness="0,0,0,1">
+                            <DockPanel LastChildFill="True">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding SelectedNode.Name}" FontSize="14"
+                                               FontWeight="SemiBold" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextPrimary}" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                        <TextBlock Text="{Binding SelectedNode.Kind}" FontSize="11"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                        <TextBlock Text="{Binding MemberSummary}" Margin="10,0,0,0"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource AccentBackground}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- The node's own properties. -->
+                        <Border DockPanel.Dock="Top" MaxHeight="190"
+                                BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1"
+                                Visibility="{Binding Properties.Count, Converter={x:Static conv:CountToVisibilityConverter.Instance}}">
+                            <DataGrid ItemsSource="{Binding Properties}" AutoGenerateColumns="False"
+                                      IsReadOnly="True" HeadersVisibility="Column"
+                                      GridLinesVisibility="Horizontal" CanUserResizeRows="False"
+                                      CanUserSortColumns="False" SelectionMode="Single"
+                                      Background="Transparent" BorderThickness="0">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Property" Width="1.1*"
+                                                        Binding="{Binding Property}" />
+                                    <DataGridTemplateColumn Header="Value" Width="2*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Value, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                           FontSize="12" TextWrapping="Wrap"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextPrimary}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+
+                        <!-- The members: attributes, parameters, fields or enumerators. -->
+                        <Grid>
+                            <TextBlock Text="This element has no attributes of its own."
+                                       Margin="24" TextWrapping="Wrap" TextAlignment="Center"
+                                       HorizontalAlignment="Center" VerticalAlignment="Top"
+                                       FontSize="12.5" Foreground="{DynamicResource TextDisabled}"
+                                       Visibility="{Binding HasMembers, Converter={x:Static conv:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}" />
+
+                            <!-- Many columns by design; sideways scrolling is correct here. -->
+                            <DataGrid ItemsSource="{Binding Members}"
+                                      AutoGenerateColumns="False" IsReadOnly="True"
+                                      HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                      CanUserResizeRows="False" CanUserSortColumns="True"
+                                      SelectionMode="Single" AlternationCount="2"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                      Visibility="{Binding HasMembers, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+                                <DataGrid.Columns>
+                                    <DataGridTemplateColumn Header="Name" Width="200">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Name}" ToolTip="{Binding Name}"
+                                                           FontSize="12.5" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Which class in the chain declares this member. Inherited rows
+                                         are muted so the class's own attributes stand out. -->
+                                    <DataGridTemplateColumn Header="Declared in" Width="150">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding DeclaredIn, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                           ToolTip="{Binding DeclaredIn}">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource MemberCellText}">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInherited}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+                                                                    <Setter Property="FontStyle" Value="Italic" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="DataType" Width="180">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Style="{StaticResource DataTypeLink}"
+                                                        Content="{Binding DataType, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                        Command="{Binding DataContext.ShowDataTypeCommand,
+                                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding DataType}"
+                                                        ToolTip="Show what this datatype can hold" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Values" Width="120">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Values, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                           ToolTip="{Binding Values}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Cardinality" Width="85">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Cardinality, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Units" Width="95">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Units, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                           ToolTip="{Binding Units}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Resolution" Width="95">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Resolution, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Accuracy" Width="95">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Accuracy, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="UpdateType" Width="105">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding UpdateType, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Ownership" Width="110">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Ownership, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Sharing" Width="120">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Sharing, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Transportation" Width="120">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Transportation, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Order" Width="95">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Order, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Dimensions" Width="120">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding Dimensions, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                           ToolTip="{Binding Dimensions}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Routing space" Width="120">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource MemberCellText}"
+                                                           Text="{Binding RoutingSpace, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="Semantics" Width="360">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Semantics, Converter={x:Static conv:NullOrEmptyToDashConverter.Instance}}"
+                                                           FontSize="12" TextWrapping="Wrap"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextSecondary}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </DockPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Busy overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="{DynamicResource Scrim}"
+                Visibility="{Binding IsBusy, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="220" Height="6" />
+                <TextBlock Text="{Binding BusyMessage}" Margin="0,12,0,0" HorizontalAlignment="Center"
+                           FontSize="12.5" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
