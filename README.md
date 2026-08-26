@@ -49,7 +49,7 @@ Two rules of thumb explain most of what this app does:
 1. Run `HLAFomReader.exe`. Nothing to install, and no .NET needed.
 2. The first launch asks where to keep your library. Take the default (`hlafomreader.db`, beside the
    exe) unless you have a reason not to. You can put a password on it.
-3. Click **Register FOM…** and add your files.
+3. Click **Register FOM…**, add your file, and press **Register**.
 4. Double-click anything in the list to explore it.
 5. Switch to **Compare**, pick two FOMs at the top, and press **Compare**.
 
@@ -70,10 +70,13 @@ on.
 
 ### Registry — your library
 
-**Register FOM…** asks which standard your model follows *first*, because the answer decides how
-many files it needs:
+**Register FOM…** asks which standard your model follows *first*, because the answer decides which
+files it needs:
 
-- **HLA Evolved / IEEE 1516** — one `.xml`. Select several at once if you like.
+- **HLA Evolved / IEEE 1516** — one `.xml`, or the modules of one. **Add files…** puts what you pick
+  on a list; press it again to add more, from a different folder if that is where they live. Files
+  come back off the list with the **✕** button or the Delete key, and **▲**/**▼** set the order they
+  merge in. Nothing is read until you press **Register**, so the list is yours to rearrange first.
 - **HLA 1.3** — **two** files, and this is the part that catches people out. The `.fed` is what the
   RTI loads: it has the class structure but **no datatypes whatsoever**. The `.omt` (or `.omd`) is
   the documentation the RTI never reads, and it is the only place the datatypes, units, sharing and
@@ -87,6 +90,18 @@ datatypes, which limits what a comparison can tell you.
 Where the two files have drifted apart, the app says so rather than quietly picking one. On a real
 vendor pair it found nine interaction classes the OMT documents but the FED does not, and four MOM
 classes the FED has that the OMT never mentions.
+
+Several 1516 files on the list are the **modules of one FOM**, never one entry each — they are
+merged in the order shown, bases first, exactly as an RTI is handed a module list, and you are asked
+where to save the result. That saved file is what gets registered, so re-reading the entry later
+re-reads the whole model rather than one module of it. A module on its own is not a small FOM but a
+misleading one: sixteen of NETN-Physical's twenty-seven classes look empty, and comparing it against
+a complete FOM reports the missing modules' attributes as deletions somebody authored. To register
+FOMs that are genuinely unrelated, register them one at a time.
+
+The entry remembers the module **file names** it was compiled from, not their paths — paths stop
+being true the moment somebody moves the files. Two modules from different folders that share a name
+are allowed, and the dialog says so, but the entry will not be able to tell you which was which.
 
 Everything the reader understood goes into the database — not as one lump, but as proper rows, one
 table per part of the model. The panel on the right then shows:

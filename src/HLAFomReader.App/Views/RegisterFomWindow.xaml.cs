@@ -1,9 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using HLAFomReader.Core.Model;
 using HLAFomReader.Core.Parsing;
 using Microsoft.Win32;
@@ -57,9 +59,14 @@ public sealed record FomRegistrationRequest(
 /// </remarks>
 /// <summary>One module in the merge-order list, numbered as the user sees it.</summary>
 /// <param name="Position">1-based place in the merge order.</param>
-/// <param name="FileName">File name alone, which is what distinguishes modules from each other.</param>
+/// <param name="FileName">File name alone, which is what the merged entry records itself as built from.</param>
+/// <param name="Folder">
+/// Name of the folder the file sits in, shown beside it because the list can now hold files from
+/// several folders and a file name on its own no longer identifies one. The leaf only: the row has
+/// space for a word, and the whole path is on the tooltip.
+/// </param>
 /// <param name="FullPath">The path, kept for the tooltip and for the request.</param>
-public sealed record ModuleRow(int Position, string FileName, string FullPath);
+public sealed record ModuleRow(int Position, string FileName, string Folder, string FullPath);
 
 public sealed partial class RegisterFomWindow : Window
 {
@@ -71,8 +78,18 @@ public sealed partial class RegisterFomWindow : Window
     private static readonly FomFileFormat OmtFormat =
         FomFileReader.SupportedFormats.First(f => f.Standard == FomStandard.Hla13 && f.HasExtension(".omt"));
 
-    /// <summary>Every file selected in the Evolved row, in the order the dialog returned them.</summary>
+    /// <summary>
+    /// Every 1516 file staged so far, in the order they will be merged. Added to rather than
+    /// replaced by each browse, which is what lets one list hold files from several folders.
+    /// </summary>
     private readonly List<string> _evolvedPaths = new();
+
+    /// <summary>
+    /// How many files the last add left out for being on the list already, so the dialog can say so
+    /// rather than appearing to have ignored the click. Cleared by anything that changes the list
+    /// some other way, since the note would then be describing a list that no longer exists.
+    /// </summary>
+    private int _duplicatesSkipped;
 
     /// <summary>
     /// Why the chosen OMT cannot be used, or <c>null</c> when there is no OMT or it is fine.
@@ -97,7 +114,16 @@ public sealed partial class RegisterFomWindow : Window
     private void Standard_Checked(object sender, RoutedEventArgs e) => UpdateState();
 
     private void ModuleList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        UpdateMoveButtons();
+        UpdateListButtons();
+
+    /// <summary>Delete takes the selected file off the list, as it would in any other list of things.</summary>
+    private void ModuleList_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Delete || ModuleList.SelectedIndex < 0) return;
+
+        RemoveSelectedEvolved();
+        e.Handled = true;
+    }
 
     private void Name_Changed(object sender, TextChangedEventArgs e) => UpdateState();
 
@@ -124,7 +150,7 @@ public sealed partial class RegisterFomWindow : Window
         (_evolvedPaths[index], _evolvedPaths[target]) = (_evolvedPaths[target], _evolvedPaths[index]);
 
         RebuildModuleList();
-        ModuleList.SelectedIndex = target;
+        SelectModule(target);
     }
 
     private void BrowseFed_Click(object sender, RoutedEventArgs e)
@@ -189,11 +215,14 @@ public sealed partial class RegisterFomWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Title = "Choose the HLA Evolved / IEEE 1516 FOM",
+            Title = "Add HLA Evolved / IEEE 1516 FOM files",
             Filter = BuildFilter(
                 "IEEE 1516 / HLA Evolved FOM",
                 FomFileReader.SupportedFormats.Where(f => f.Standard != FomStandard.Hla13).ToArray()),
-            InitialDirectory = StartingDirectory(_evolvedPaths.FirstOrDefault()),
+            // Beside the file added last rather than the first: building a list across folders is a
+            // walk through them, and the folder just visited is the best guess at where the next
+            // file lives.
+            InitialDirectory = StartingDirectory(_evolvedPaths.LastOrDefault()),
             CheckFileExists = true,
             CheckPathExists = true,
             Multiselect = true,
@@ -201,10 +230,83 @@ public sealed partial class RegisterFomWindow : Window
 
         if (ModalScrim.ShowModal(dialog, this) != true) return;
 
-        _evolvedPaths.Clear();
-        _evolvedPaths.AddRange(dialog.FileNames);
+        AddEvolvedFiles(dialog.FileNames);
+        UpdateState();
+    }
+
+    /// <summary>
+    /// Appends files to the staged list, in the order given, skipping any already on it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Appending rather than replacing is the whole point: one <see cref="OpenFileDialog"/> can only
+    /// return files from the folder it is looking at, so a list built by a single browse is a list
+    /// from a single folder. Module stacks are not filed that way — a vendor FOM and the NETN
+    /// modules extending it usually arrive as separate drops, in separate folders, and asking the
+    /// user to copy them together first is asking them to edit their FOM library to suit a dialog.
+    /// </para>
+    /// <para>
+    /// The same file twice is dropped rather than staged twice. The merge would not mind; absorbing
+    /// a module a second time is a no-op by design, because dependency graphs hand it the same base
+    /// repeatedly. What would go wrong is the record of it — the entry would carry a "2 modules"
+    /// badge and a use-history line naming one file twice, which is a claim about provenance that
+    /// nobody made.
+    /// </para>
+    /// </remarks>
+    private void AddEvolvedFiles(IEnumerable<string> paths)
+    {
+        var added = 0;
+        var skipped = 0;
+
+        foreach (var path in paths)
+        {
+            if (_evolvedPaths.Any(staged => SamePath(staged, path)))
+            {
+                skipped++;
+                continue;
+            }
+
+            _evolvedPaths.Add(path);
+            added++;
+        }
+
+        _duplicatesSkipped = skipped;
         RebuildModuleList();
 
+        // Land on the newest file, so the order and remove buttons act on what was just added.
+        if (added > 0) SelectModule(_evolvedPaths.Count - 1);
+    }
+
+    private void RemoveEvolved_Click(object sender, RoutedEventArgs e) => RemoveSelectedEvolved();
+
+    /// <summary>Takes the selected file off the list and leaves the selection somewhere useful.</summary>
+    private void RemoveSelectedEvolved()
+    {
+        var index = ModuleList.SelectedIndex;
+        if (index < 0) return;
+
+        _evolvedPaths.RemoveAt(index);
+
+        // The skipped-duplicates note described the list as the last add left it. Once a file has
+        // been taken back off, it is reporting on a list the user has since taken apart.
+        _duplicatesSkipped = 0;
+
+        RebuildModuleList();
+
+        // Whatever moved up into the removed row's place, so a run of files can be cleared with
+        // repeated clicks rather than re-aimed after each one. Count - 1 is -1 on the last removal,
+        // which is the empty list's correct selection anyway.
+        SelectModule(Math.Min(index, _evolvedPaths.Count - 1));
+
+        UpdateState();
+    }
+
+    private void ClearEvolved_Click(object sender, RoutedEventArgs e)
+    {
+        _evolvedPaths.Clear();
+        _duplicatesSkipped = 0;
+
+        RebuildModuleList();
         UpdateState();
     }
 
@@ -260,15 +362,40 @@ public sealed partial class RegisterFomWindow : Window
     private void RebuildModuleList()
     {
         ModuleList.ItemsSource = _evolvedPaths
-            .Select((path, index) => new ModuleRow(index + 1, System.IO.Path.GetFileName(path), path))
+            .Select((path, index) => new ModuleRow(
+                index + 1, System.IO.Path.GetFileName(path), LeafFolderOf(path), path))
             .ToList();
     }
 
-    private void UpdateMoveButtons()
+    /// <summary>Selects a row and brings it into view. Pass -1 to select nothing.</summary>
+    /// <remarks>
+    /// The scroll is not a nicety. Setting <see cref="Selector.SelectedIndex"/> does not move a
+    /// <see cref="ListBox"/>'s viewport, and this one shows five rows of however many are staged, so
+    /// a selection made in code can sit below the fold — with the order and remove buttons enabled
+    /// and aimed at a row nobody can see. Adding a sixth file would then leave the list looking
+    /// untouched and the next press of remove would take off a file the user never pointed at.
+    /// </remarks>
+    private void SelectModule(int index)
+    {
+        ModuleList.SelectedIndex = index;
+
+        if (index < 0 || index >= ModuleList.Items.Count) return;
+
+        // Laid out first so the rows exist. ScrollIntoView on a list whose containers have not been
+        // generated yet does not scroll; it posts itself back to the dispatcher and hopes, which is
+        // a promise this method cannot keep to a caller that returns straight into more work.
+        ModuleList.UpdateLayout();
+        ModuleList.ScrollIntoView(ModuleList.Items[index]);
+    }
+
+    /// <summary>Enables the list's own buttons for whatever is selected, if anything.</summary>
+    private void UpdateListButtons()
     {
         var index = ModuleList.SelectedIndex;
+
         MoveUpButton.IsEnabled = index > 0;
         MoveDownButton.IsEnabled = index >= 0 && index < _evolvedPaths.Count - 1;
+        RemoveButton.IsEnabled = index >= 0;
     }
 
     /// <summary>
@@ -309,23 +436,36 @@ public sealed partial class RegisterFomWindow : Window
         ShowText(Hla13Error, _omtError);
 
         // --- Evolved annotations
-        if (_evolvedPaths.Count > 1)
-        {
-            // The box cannot show several paths, so it shows what they have in common and the
-            // note carries the names; the tooltip keeps the full list one hover away.
-            var folder = DirectoryOf(_evolvedPaths[0]);
-            SetPath(EvolvedPathBox, folder.Length != 0 ? folder : _evolvedPaths[0]);
+        var staged = _evolvedPaths.Count;
 
-            var names = _evolvedPaths.Select(System.IO.Path.GetFileName);
-            EvolvedCountNote.Text = $"{_evolvedPaths.Count} files selected — {string.Join(", ", names)}";
-            EvolvedCountNote.ToolTip = string.Join(Environment.NewLine, _evolvedPaths);
-            EvolvedCountNote.Visibility = Visibility.Visible;
-        }
-        else
+        EmptyListNote.Visibility = staged == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ClearEvolvedButton.IsEnabled = staged != 0;
+
+        // Selection is what the order and remove buttons act on, so a list with rows in it must
+        // never be sitting on none of them.
+        if (staged > 0 && ModuleList.SelectedIndex < 0) SelectModule(0);
+        UpdateListButtons();
+
+        EvolvedCountNote.Text = staged == 1 ? "1 file" : $"{staged} files";
+        EvolvedCountNote.ToolTip = string.Join(Environment.NewLine, _evolvedPaths);
+        EvolvedCountNote.Visibility = staged == 0 ? Visibility.Collapsed : Visibility.Visible;
+
+        ShowText(EvolvedAddNote, _duplicatesSkipped switch
         {
-            SetPath(EvolvedPathBox, _evolvedPaths.Count == 1 ? _evolvedPaths[0] : "");
-            EvolvedCountNote.Visibility = Visibility.Collapsed;
-        }
+            0 => null,
+            1 => "One file was already on the list and was not added again.",
+            var n => $"{n} files were already on the list and were not added again.",
+        });
+
+        // Files can come from anywhere now, so two modules can share a name without being the same
+        // file. What the entry remembers being compiled from is file names alone — deliberately, as
+        // paths stop being true the moment somebody moves the files — so the clash is allowed but
+        // leaves the entry unable to say which was which.
+        var clashes = AmbiguousModuleNames();
+        ShowText(EvolvedNameWarning, clashes.Length == 0
+            ? null
+            : $"More than one file here is called {string.Join(", ", clashes)}. The entry records "
+              + "its modules by file name, so it will not show which folder each came from.");
 
         // --- Compiling several modules into one FOM.
         //
@@ -335,12 +475,6 @@ public sealed partial class RegisterFomWindow : Window
         // conflating them would suggest a 1.3 FOM could be assembled from parts, which it cannot.
         var compiling = IsCompiling;
         CompileSection.Visibility = compiling ? Visibility.Visible : Visibility.Collapsed;
-
-        if (compiling)
-        {
-            if (ModuleList.SelectedIndex < 0) ModuleList.SelectedIndex = 0;
-            UpdateMoveButtons();
-        }
 
         // The name box is always shown — every registration this dialog produces is a single entry,
         // so there is no longer a case where one name would have to describe several of them — but
@@ -367,7 +501,7 @@ public sealed partial class RegisterFomWindow : Window
         if (!isHla13)
         {
             return _evolvedPaths.Count == 0
-                ? "Choose at least one FOM file."
+                ? "Add at least one FOM file."
                 : "Name the compiled FOM to continue.";
         }
 
@@ -423,6 +557,44 @@ public sealed partial class RegisterFomWindow : Window
         var mask = string.Join(";", extensions.Select(e => "*" + e));
 
         return $"{label} ({mask})|{mask}|All files (*.*)|*.*";
+    }
+
+    /// <summary>
+    /// File names staged more than once, which only became reachable once the list could span
+    /// folders — within one folder a repeated name is the same file, and those are dropped on the
+    /// way in.
+    /// </summary>
+    private string[] AmbiguousModuleNames() => _evolvedPaths
+        .Select(path => System.IO.Path.GetFileName(path))
+        .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+        .Where(group => group.Count() > 1)
+        .Select(group => group.Key)
+        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    /// <summary>
+    /// The name of the folder holding <paramref name="path"/>, or "" when it has none.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <see cref="DirectoryOf"/>: this is for a label, so it must not depend on the
+    /// folder still being there, and it wants the leaf rather than the whole path — the row has
+    /// space for a word, and the tooltip already carries the path in full.
+    /// </remarks>
+    private static string LeafFolderOf(string path)
+    {
+        try
+        {
+            var folder = System.IO.Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(folder)) return "";
+
+            // A root such as C:\ has no name of its own; trimming leaves "C:" to show instead.
+            var leaf = System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(folder));
+            return leaf.Length != 0 ? leaf : folder;
+        }
+        catch (ArgumentException)
+        {
+            return "";
+        }
     }
 
     /// <summary>The sibling OMT of <paramref name="fedPath"/>, or <c>null</c> when there is none.</summary>
@@ -505,8 +677,8 @@ public sealed partial class RegisterFomWindow : Window
 
     /// <summary>
     /// Shows the dialog and returns the registrations the user asked for, or <c>null</c> if they
-    /// cancelled. The list holds one entry per file to register: always one for HLA 1.3, and one
-    /// per selected file for HLA Evolved.
+    /// cancelled. Always exactly one: an HLA 1.3 FED with its OMT, a single 1516 FOM, or the module
+    /// list that compiles into one.
     /// </summary>
     /// <param name="owner">Window to centre on; <c>null</c> centres on the screen.</param>
     public static IReadOnlyList<FomRegistrationRequest>? Prompt(Window? owner)

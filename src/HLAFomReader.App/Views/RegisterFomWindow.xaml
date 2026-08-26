@@ -1,4 +1,4 @@
-<Window x:Class="HLAFomReader.App.Views.RegisterFomWindow"
+﻿<Window x:Class="HLAFomReader.App.Views.RegisterFomWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Register FOM"
@@ -258,20 +258,101 @@
                     <StackPanel x:Name="EvolvedFiles" Margin="24,14,0,0">
 
                         <TextBlock Style="{StaticResource FieldLabel}">
-                            <Run Text="FOM FILE" /><Run Text="   ONE OR MORE" Foreground="{DynamicResource TextDisabled}" />
+                            <Run Text="FOM FILES" /><Run Text="   ONE OR MORE" Foreground="{DynamicResource TextDisabled}" />
                         </TextBlock>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="EvolvedPathBox" Grid.Column="0" Style="{StaticResource PathBox}"
-                                     Tag="No FOM file chosen" />
-                            <Button Grid.Column="1" Style="{StaticResource RowButton}" Content="Browse…"
-                                    Click="BrowseEvolved_Click" AutomationProperties.Name="Browse for FOM files" />
-                        </Grid>
 
-                        <TextBlock x:Name="EvolvedCountNote" Style="{StaticResource RowNote}" Visibility="Collapsed" />
+                        <!--
+                            The list is the file control here, not a summary of one. A read-only path
+                            box cannot show files that live in different folders, and the list this
+                            replaced could only be filled by a single multi-select — which is to say
+                            by a single folder, because that is all one OpenFileDialog can return.
+                            Files are added a browse at a time and taken off one at a time; nothing is
+                            read until Register is pressed.
+
+                            Order is part of the input, not presentation. An RTI is handed a module
+                            list and merges it in the order given, bases first; this list is that
+                            list, so it is reorderable rather than sorted for the user.
+                        -->
+                        <Border Margin="0,4,0,0" Padding="1"
+                                Background="{DynamicResource SurfaceAltBackground}"
+                                BorderBrush="{DynamicResource Divider}" BorderThickness="1"
+                                CornerRadius="{StaticResource ControlCornerRadiusSmall}">
+                            <DockPanel LastChildFill="True">
+
+                                <StackPanel DockPanel.Dock="Right" Margin="6,6,6,6" VerticalAlignment="Top">
+                                    <Button x:Name="MoveUpButton" Style="{StaticResource IconButton}"
+                                            Content="▲" FontSize="10" Margin="0" Click="MoveUp_Click"
+                                            ToolTip="Compile this module earlier"
+                                            AutomationProperties.Name="Move module earlier" />
+                                    <Button x:Name="MoveDownButton" Style="{StaticResource IconButton}"
+                                            Content="▼" FontSize="10" Margin="0,4,0,0" Click="MoveDown_Click"
+                                            ToolTip="Compile this module later"
+                                            AutomationProperties.Name="Move module later" />
+                                    <!-- Set apart from the order pair: this one is not a nudge. -->
+                                    <Button x:Name="RemoveButton" Style="{StaticResource IconButton}"
+                                            Content="✕" FontSize="11" Margin="0,10,0,0" Click="RemoveEvolved_Click"
+                                            ToolTip="Take this file off the list (Delete)"
+                                            AutomationProperties.Name="Remove this file from the list" />
+                                </StackPanel>
+
+                                <!-- MaxHeight and no Height: the button rail sets the floor, so an
+                                     empty list already stands at the height it will keep, and a long
+                                     one stops growing the dialog and scrolls instead. -->
+                                <Grid>
+                                    <ListBox x:Name="ModuleList" MaxHeight="170" BorderThickness="0"
+                                             Background="Transparent"
+                                             SelectionChanged="ModuleList_SelectionChanged"
+                                             KeyDown="ModuleList_KeyDown"
+                                             AutomationProperties.Name="Chosen FOM files, in merge order">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <DockPanel LastChildFill="True">
+                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Position}"
+                                                               Width="22" FontSize="11"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource TextDisabled}" />
+                                                    <!-- The folder earns its place now that files can
+                                                         come from different ones: without it two files
+                                                         with the same name are the same row twice. -->
+                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Folder}"
+                                                               MaxWidth="150" Margin="10,0,0,0" FontSize="11"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Foreground="{DynamicResource TextDisabled}"
+                                                               ToolTip="{Binding FullPath}" />
+                                                    <TextBlock Text="{Binding FileName}" FontSize="12.5"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               ToolTip="{Binding FullPath}" />
+                                                </DockPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+
+                                    <TextBlock x:Name="EmptyListNote" Margin="12,0,0,0" FontSize="12"
+                                               VerticalAlignment="Center" IsHitTestVisible="False"
+                                               Foreground="{DynamicResource TextDisabled}"
+                                               Text="No FOM files chosen yet." />
+                                </Grid>
+                            </DockPanel>
+                        </Border>
+
+                        <DockPanel Margin="0,8,0,0" LastChildFill="False">
+                            <Button DockPanel.Dock="Left" Style="{StaticResource RowButton}" Margin="0"
+                                    Content="Add files…" Click="BrowseEvolved_Click"
+                                    AutomationProperties.Name="Add FOM files to the list" />
+                            <Button DockPanel.Dock="Left" x:Name="ClearEvolvedButton"
+                                    Style="{StaticResource RowButton}" Margin="4,0,0,0"
+                                    Content="Clear" Click="ClearEvolved_Click"
+                                    AutomationProperties.Name="Take every file off the list" />
+                            <TextBlock DockPanel.Dock="Right" x:Name="EvolvedCountNote"
+                                       VerticalAlignment="Center" FontSize="11" Visibility="Collapsed"
+                                       Foreground="{DynamicResource TextSecondary}" />
+                        </DockPanel>
+
+                        <TextBlock x:Name="EvolvedAddNote" Style="{StaticResource RowNote}" Visibility="Collapsed" />
+
+                        <TextBlock x:Name="EvolvedNameWarning" Style="{StaticResource RowWarning}" Visibility="Collapsed" />
 
                         <!--
                             Only shown once more than one file is chosen.
@@ -285,58 +366,10 @@
                             somebody authored. Registering FOMs that are genuinely unrelated is one
                             file at a time, which is what it always was.
                         -->
-                        <StackPanel x:Name="CompileSection" Margin="0,14,0,0" Visibility="Collapsed">
-
-                            <TextBlock Style="{StaticResource FieldLabel}" Text="MERGE ORDER" />
-
-                            <!--
-                                Order is the whole input. An RTI is handed a module list and merges
-                                it in the order given, bases first; this list is that list, so it is
-                                reorderable rather than sorted for the user.
-                            -->
-                            <Border Margin="0,4,0,0" Padding="1"
-                                    Background="{DynamicResource SurfaceAltBackground}"
-                                    BorderBrush="{DynamicResource Divider}" BorderThickness="1"
-                                    CornerRadius="{StaticResource ControlCornerRadiusSmall}">
-                                <DockPanel LastChildFill="True">
-
-                                    <StackPanel DockPanel.Dock="Right" Margin="6,6,6,6" VerticalAlignment="Top">
-                                        <Button x:Name="MoveUpButton" Style="{StaticResource IconButton}"
-                                                Content="▲" FontSize="10" Margin="0" Click="MoveUp_Click"
-                                                ToolTip="Compile this module earlier"
-                                                AutomationProperties.Name="Move module earlier" />
-                                        <Button x:Name="MoveDownButton" Style="{StaticResource IconButton}"
-                                                Content="▼" FontSize="10" Margin="0,4,0,0" Click="MoveDown_Click"
-                                                ToolTip="Compile this module later"
-                                                AutomationProperties.Name="Move module later" />
-                                    </StackPanel>
-
-                                    <ListBox x:Name="ModuleList" Height="132" BorderThickness="0"
-                                             Background="Transparent"
-                                             SelectionChanged="ModuleList_SelectionChanged"
-                                             AutomationProperties.Name="Module merge order">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate>
-                                                <DockPanel LastChildFill="True">
-                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Position}"
-                                                               Width="22" FontSize="11"
-                                                               VerticalAlignment="Center"
-                                                               Foreground="{DynamicResource TextDisabled}" />
-                                                    <TextBlock Text="{Binding FileName}" FontSize="12.5"
-                                                               VerticalAlignment="Center"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               ToolTip="{Binding FullPath}" />
-                                                </DockPanel>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
-                                </DockPanel>
-                            </Border>
-
+                        <StackPanel x:Name="CompileSection" Margin="0,10,0,0" Visibility="Collapsed">
                             <TextBlock Style="{StaticResource RowNote}"
-                                       Margin="0,7,0,0" TextWrapping="Wrap"
+                                       Margin="0" TextWrapping="Wrap"
                                        Text="Compiled in this order, bases first — the same module list an RTI is given. You will be asked where to save the result." />
-
                         </StackPanel>
 
                     </StackPanel>
