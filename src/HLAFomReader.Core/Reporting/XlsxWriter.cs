@@ -593,12 +593,23 @@ public static class XlsxWriter
         return name.ToString();
     }
 
+    /// <summary>Excel refuses a workbook holding a cell longer than this.</summary>
+    private const int MaxCellText = 32_767;
+
     /// <summary>
-    /// Escapes text for XML content and drops the control characters XML 1.0 cannot represent.
+    /// Escapes text for XML content and drops what XML 1.0 cannot represent.
     /// FOM semantics fields are free text written by hand, so both halves of that matter.
     /// </summary>
+    /// <remarks>
+    /// Everything a caller writes reaches the file through here, which is the only reason one
+    /// method can be trusted to keep the workbook openable.
+    /// </remarks>
     private static string Escape(string value)
     {
+        // Trimmed before escaping rather than after: a cap applied to the escaped text could cut an
+        // entity in half, and Excel counts the characters a reader sees, not the ones on disk.
+        if (value.Length > MaxCellText) value = value[..(MaxCellText - 1)] + "…";
+
         var builder = new StringBuilder(value.Length + 16);
 
         foreach (var c in value)
@@ -613,6 +624,14 @@ public static class XlsxWriter
                 case '\t':
                 case '\n':
                 case '\r': builder.Append(c); break;
+
+                // The two non-characters XML forbids outright. Unlike a lone surrogate — which the
+                // UTF-8 encoder quietly replaces on the way out — these are valid Unicode scalars
+                // that encode happily and then make the part unreadable, so the encoder will not
+                // save us and they have to go here.
+                case '\uFFFE':
+                case '\uFFFF': break;
+
                 default:
                     if (c >= ' ') builder.Append(c);
                     break;

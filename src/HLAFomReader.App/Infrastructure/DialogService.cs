@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using HLAFomReader.App.ViewModels;
 using HLAFomReader.App.Views;
+using HLAFomReader.Core.Reporting;
 using Microsoft.Win32;
 
 namespace HLAFomReader.App.Infrastructure;
@@ -50,6 +51,17 @@ public interface IDialogService
     /// </summary>
     /// <param name="model">The prepared datatype, already read out of the FOM.</param>
     void ShowDataTypeDetail(DataTypeDetailViewModel model);
+
+    /// <summary>
+    /// Asks which classes an Excel export should include the members of.
+    /// </summary>
+    /// <param name="model">The class trees to offer, already built from the document being exported.</param>
+    /// <returns>
+    /// The ticked classes, or <c>null</c> when the user cancelled. The two are different answers and
+    /// callers must keep them apart: an empty selection means "export, just the hierarchies", while
+    /// null means "do not export at all".
+    /// </returns>
+    ClassExportSelection? RequestExportSelection(ExportSelectionViewModel model);
 }
 
 /// <summary>
@@ -113,6 +125,10 @@ public sealed class DialogService : IDialogService
     /// <inheritdoc />
     public void ShowDataTypeDetail(DataTypeDetailViewModel model) =>
         DataTypeDetailWindow.Open(Owner, model);
+
+    /// <inheritdoc />
+    public ClassExportSelection? RequestExportSelection(ExportSelectionViewModel model) =>
+        ExportSelectionWindow.Prompt(Owner, model);
 
     /// <summary>
     /// The window dialogs should be modal to. Null during startup and shutdown, which the dialog

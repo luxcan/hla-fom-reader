@@ -11,6 +11,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using HLAFomReader.App.Infrastructure;
 using HLAFomReader.App.ViewModels;
+using HLAFomReader.Core.Reporting;
 using HLAFomReader.App.Views;
 using HLAFomReader.Core.Parsing;
 using HLAFomReader.Core.Registry;
@@ -338,6 +339,9 @@ public sealed class VisualCaptureTests
         public void ShowError(string title, string message) => throw new InvalidOperationException($"{title}: {message}");
         public void ShowInfo(string title, string message) { }
         public void ShowDataTypeDetail(DataTypeDetailViewModel model) => _captured.Add(model);
+
+        /// <summary>Cancelled rather than answered, so no test can start an export unattended.</summary>
+        public ClassExportSelection? RequestExportSelection(ExportSelectionViewModel model) => null;
     }
 
     [Fact]
@@ -765,5 +769,8 @@ public sealed class VisualCaptureTests
         public void ShowError(string title, string message) => throw new InvalidOperationException($"{title}: {message}");
         public void ShowInfo(string title, string message) { }
         public void ShowDataTypeDetail(DataTypeDetailViewModel model) { }
+
+        /// <summary>Cancelled rather than answered, so no test can start an export unattended.</summary>
+        public ClassExportSelection? RequestExportSelection(ExportSelectionViewModel model) => null;
     }
 }

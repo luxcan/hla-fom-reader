@@ -352,5 +352,8 @@ public sealed class ThemeTests
         public void ShowError(string title, string message) => throw new InvalidOperationException($"{title}: {message}");
         public void ShowInfo(string title, string message) { }
         public void ShowDataTypeDetail(DataTypeDetailViewModel model) { }
+
+        /// <summary>Cancelled rather than answered, so no test can start an export unattended.</summary>
+        public ClassExportSelection? RequestExportSelection(ExportSelectionViewModel model) => null;
     }
 }

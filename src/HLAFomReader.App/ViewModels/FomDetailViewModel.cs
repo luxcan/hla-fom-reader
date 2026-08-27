@@ -327,17 +327,33 @@ public sealed class FomDetailViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Writes this FOM's object and interaction class trees to an Excel workbook, one sheet each.
+    /// Writes this FOM's object and interaction class trees to an Excel workbook, one sheet each,
+    /// plus a sheet of members for any class the user picked on the way through.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This replaced a "copy the visible table" button. Copying answered a question nobody was
     /// asking — the member table is already on screen — whereas the shape of the class tree is the
     /// thing people take away and work through, and it is the one view a window cannot show whole.
+    /// </para>
+    /// <para>
+    /// Two dialogs, picker first: what to export is the decision, where to put it is the
+    /// confirmation. Cancelling either abandons the export and writes nothing, but only the picker
+    /// can be cancelled without having chosen anything yet, which is why it comes first.
+    /// </para>
+    /// <para>
+    /// A picker that returns an empty selection is not a cancel. It means the user looked at the
+    /// classes on offer and wanted none of them, which is the two-sheet workbook this button
+    /// produced before there was anything to pick — so it goes ahead.
+    /// </para>
     /// </remarks>
     private void ExportHierarchy()
     {
         var document = Document;
         if (document is null) return;
+
+        var selection = _dialogs.RequestExportSelection(new ExportSelectionViewModel(document, Entry.DisplayName));
+        if (selection is null) return;
 
         var path = _dialogs.SaveFile(
             "Export class hierarchy",
@@ -351,7 +367,7 @@ public sealed class FomDetailViewModel : ViewModelBase
         {
             // Painted in whichever theme is on screen, so the sheet and the app it came out of look
             // like the same piece of work.
-            ClassHierarchyExporter.Export(document, path, ExportPalette.Current());
+            ClassHierarchyExporter.Export(document, path, selection, ExportPalette.Current());
 
             var objects = document.ObjectClasses.Sum(c => c.DescendantsAndSelf().Count());
             var interactions = document.InteractionClasses.Sum(c => c.DescendantsAndSelf().Count());
@@ -359,12 +375,35 @@ public sealed class FomDetailViewModel : ViewModelBase
             StatusMessage = $"Class hierarchy written to {Path.GetFileName(path)}";
             _dialogs.ShowInfo("Export complete",
                 $"{objects} object class{(objects == 1 ? "" : "es")} and {interactions} " +
-                $"interaction class{(interactions == 1 ? "" : "es")} written to:\n\n{path}");
+                $"interaction class{(interactions == 1 ? "" : "es")} written to:\n\n{path}" +
+                MembersExported(selection));
         }
         catch (Exception ex)
         {
             _dialogs.ShowError("Export failed", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// The sentence the completion message adds when the user asked for member sheets as well.
+    /// </summary>
+    /// <remarks>
+    /// Silent for an empty selection, so anyone who does not use the picker sees exactly the message
+    /// this export has always shown.
+    /// </remarks>
+    private static string MembersExported(ClassExportSelection selection)
+    {
+        if (selection.IsEmpty) return "";
+
+        var parts = new List<string>(2);
+
+        if (selection.ObjectClasses.Count > 0)
+            parts.Add($"{selection.ObjectClasses.Count} object class{(selection.ObjectClasses.Count == 1 ? "" : "es")}");
+
+        if (selection.InteractionClasses.Count > 0)
+            parts.Add($"{selection.InteractionClasses.Count} interaction class{(selection.InteractionClasses.Count == 1 ? "" : "es")}");
+
+        return $"\n\nMembers of {string.Join(" and ", parts)} were written to their own tabs.";
     }
 
     /// <summary>Makes a FOM's display name safe to use as a file name.</summary>
@@ -752,52 +791,16 @@ public sealed class FomExplorerNode : ObservableObject
     /// <remarks>
     /// An attribute redeclared on a subclass overrides the inherited one rather than appearing twice.
     /// </remarks>
-    private static List<FomMemberRow> EffectiveAttributes(FomObjectClass objectClass)
-    {
-        var chain = new List<FomObjectClass>();
-        for (var current = objectClass; current is not null; current = current.Parent)
-            chain.Add(current);
-        chain.Reverse();
-
-        var rows = new List<FomMemberRow>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var owner in chain)
-        {
-            var inherited = !ReferenceEquals(owner, objectClass);
-            foreach (var attribute in owner.Attributes)
-            {
-                if (!seen.Add(attribute.Name)) continue;
-                rows.Add(BuildAttribute(attribute, owner.Name, inherited));
-            }
-        }
-
-        return rows;
-    }
+    private static List<FomMemberRow> EffectiveAttributes(FomObjectClass objectClass) =>
+        FomInheritance.EffectiveAttributes(objectClass)
+            .Select(e => BuildAttribute(e.Attribute, e.Owner.Name, !ReferenceEquals(e.Owner, objectClass)))
+            .ToList();
 
     /// <summary>The interaction equivalent of <see cref="EffectiveAttributes"/>.</summary>
-    private static List<FomMemberRow> EffectiveParameters(FomInteractionClass interaction)
-    {
-        var chain = new List<FomInteractionClass>();
-        for (var current = interaction; current is not null; current = current.Parent)
-            chain.Add(current);
-        chain.Reverse();
-
-        var rows = new List<FomMemberRow>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var owner in chain)
-        {
-            var inherited = !ReferenceEquals(owner, interaction);
-            foreach (var parameter in owner.Parameters)
-            {
-                if (!seen.Add(parameter.Name)) continue;
-                rows.Add(BuildParameter(parameter, owner.Name, inherited));
-            }
-        }
-
-        return rows;
-    }
+    private static List<FomMemberRow> EffectiveParameters(FomInteractionClass interaction) =>
+        FomInheritance.EffectiveParameters(interaction)
+            .Select(e => BuildParameter(e.Parameter, e.Owner.Name, !ReferenceEquals(e.Owner, interaction)))
+            .ToList();
 
     private static FomMemberRow BuildAttribute(FomAttribute attribute, string declaredIn, bool inherited) =>
         new(attribute.Name, "attribute")

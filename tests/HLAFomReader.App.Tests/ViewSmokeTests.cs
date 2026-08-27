@@ -11,6 +11,7 @@ using System.Windows.Diagnostics;
 using System.Windows.Threading;
 using HLAFomReader.App.Infrastructure;
 using HLAFomReader.App.ViewModels;
+using HLAFomReader.Core.Reporting;
 using HLAFomReader.App.Views;
 using HLAFomReader.Core.Comparison;
 using HLAFomReader.Core.Parsing;
@@ -753,6 +754,9 @@ public sealed class ViewSmokeTests
 
         /// <summary>Recorded rather than shown: a modal here would block the WPF host thread.</summary>
         public void ShowDataTypeDetail(DataTypeDetailViewModel model) => Inspected.Add(model);
+
+        /// <summary>Cancelled rather than answered, so no test can start an export unattended.</summary>
+        public ClassExportSelection? RequestExportSelection(ExportSelectionViewModel model) => null;
 
         public List<DataTypeDetailViewModel> Inspected { get; } = new();
     }

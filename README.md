@@ -128,6 +128,20 @@ qualified name, sharing, the depth as a number, and how many attributes (or para
 declares itself versus inherits — the same split the screen shows. The writer is hand-rolled
 against the SpreadsheetML schema, so the app takes no Office dependency.
 
+The button opens a picker first, with both class trees and a checkbox against every class. Anything
+you tick comes out in full: the object classes you pick add an *Object Class Attributes* tab, the
+interaction classes add an *Interaction Class Parameters* tab, and each row carries the class, the
+member, the class that declared it, whether it was inherited, and every OMT column the detail screen
+shows. Nothing is merged on those tabs, so they sort and filter — which is the point of having them.
+
+Ticking a class fills its whole branch; unticking it clears the branch again. After that each class
+stands alone, so you can tick a parent and drop the two subclasses you don't want. A class showing a
+**partial** bar rather than a tick is *not* in the workbook — the bar only says something below it
+is — and the line above the buttons counts what you have actually chosen and how many tabs it comes
+to. Ticking nothing is a perfectly good answer: you get the two hierarchy tabs on their own, which
+is what this button did before the picker existed. The hierarchies are always written in full; the
+picker adds detail and never filters the model.
+
 An entry is marked **stale** when the file on disk no longer matches the fingerprint taken when you
 registered it, and **missing** when the file has gone altogether. Either way you can still compare
 it, because the app works from its own copy rather than re-reading the file.
@@ -367,7 +381,7 @@ HLAFomReader.slnx
 │  ├─ Parsing/                  SExpressionReader + FedParser (1.3), Ieee1516XmlParser, FomFileReader
 │  ├─ Comparison/               OmtNormalizer, FomComparer, the diff tree, TableComparer
 │  ├─ Registry/                 FomDatabase (schema), SqliteFomRepository, RegistryTables
-│  └─ Reporting/                HTML / Markdown / CSV export, XlsxWriter + ClassHierarchyExporter
+│  └─ Reporting/                HTML / Markdown / CSV export, XlsxWriter, hierarchy + member exporters
 ├─ src/HLAFomReader.App           net9.0-windows WPF app
 │  ├─ Themes/                   Precision.Light.xaml + Precision.Dark.xaml (design handoff),
 │  │                            Controls.xaml

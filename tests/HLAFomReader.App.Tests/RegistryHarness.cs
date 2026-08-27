@@ -5,6 +5,7 @@ using System.Threading;
 using System.Windows.Threading;
 using HLAFomReader.App.Infrastructure;
 using HLAFomReader.App.ViewModels;
+using HLAFomReader.Core.Reporting;
 using HLAFomReader.App.Views;
 using HLAFomReader.Core.Registry;
 
@@ -126,5 +127,17 @@ internal static class RegistryHarness
         public void ShowError(string title, string message) => Errors.Add($"{title}: {message}");
         public void ShowInfo(string title, string message) { }
         public void ShowDataTypeDetail(DataTypeDetailViewModel model) { }
+
+        /// <summary>What the export picker answers with. Null is a cancel; None is "just the hierarchies".</summary>
+        public ClassExportSelection? ExportSelection { get; set; } = ClassExportSelection.None;
+
+        /// <summary>The FOM name each export picker opened on, in order.</summary>
+        public List<string> ExportPrompts { get; } = new();
+
+        public ClassExportSelection? RequestExportSelection(ExportSelectionViewModel model)
+        {
+            ExportPrompts.Add(model.FomName);
+            return ExportSelection;
+        }
     }
 }

@@ -1,0 +1,303 @@
+<Window x:Class="HLAFomReader.App.Views.ExportSelectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:HLAFomReader.App.ViewModels"
+        xmlns:conv="clr-namespace:HLAFomReader.App.Converters"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:ExportSelectionViewModel}"
+        Title="Export to Excel"
+        Width="880" Height="660"
+        MinWidth="640" MinHeight="440"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AppBackground}"
+        Foreground="{DynamicResource TextPrimary}"
+        FontFamily="{StaticResource AppFontFamily}"
+        FontSize="{StaticResource FontSizeBody}"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="36"
+                      ResizeBorderThickness="6"
+                      CornerRadius="0"
+                      GlassFrameThickness="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+
+        <!-- Same caption button as the shell: 44 DIP wide, close hover uses ValidationError. -->
+        <Style x:Key="CloseCaptionButton" TargetType="Button">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ValidationError}" />
+                                <Setter Property="Foreground" Value="#FFFFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- One of the two picker panes, so neither reads as an annex of the other. -->
+        <Style x:Key="PaneCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SurfaceBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Divider}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+        </Style>
+
+        <Style x:Key="PaneHeading" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+
+        <Style x:Key="PaneButton" TargetType="Button" BasedOn="{StaticResource SubtleButton}">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+
+        <!--
+            The row a class occupies. The tick is the whole point of this screen, so the checkbox
+            carries the name rather than sitting beside a separate label: a 26 DIP row where only a
+            16 DIP box is clickable is a row people miss.
+        -->
+        <Style x:Key="ClassRowCheck" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+            <Setter Property="Margin" Value="0,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <!--
+                Off on purpose while IsChecked is still bound three-valued. The view model sets null
+                to mean "some of my descendants are ticked"; leaving IsThreeState off is what stops a
+                click cycling into that state, which is a fact about the tree rather than an answer a
+                user gives.
+            -->
+            <Setter Property="IsThreeState" Value="False" />
+        </Style>
+
+        <Style x:Key="ClassDetailText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+        </Style>
+
+        <Style x:Key="EmptyPaneText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="16" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+        </Style>
+
+        <!--
+            Hides a filtered-out row without rebuilding the tree, which is what keeps the ticks
+            across a search. Set on the container rather than the header so the row's whole subtree
+            goes with it.
+        -->
+        <Style x:Key="ClassItemContainer" TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+            <Setter Property="Visibility"
+                    Value="{Binding IsVisible, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}" />
+        </Style>
+
+        <HierarchicalDataTemplate x:Key="ClassTemplate"
+                                  DataType="{x:Type vm:ExportClassNode}"
+                                  ItemsSource="{Binding Children}">
+            <StackPanel Orientation="Horizontal" Margin="0,3">
+                <CheckBox Style="{StaticResource ClassRowCheck}"
+                          IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                          Content="{Binding Name}"
+                          ToolTip="{Binding QualifiedName}" />
+                <TextBlock Style="{StaticResource ClassDetailText}" Text="{Binding Detail}" />
+            </StackPanel>
+        </HierarchicalDataTemplate>
+
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="36" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Title bar ============ -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource TitleBarBackground}"
+                BorderBrush="{DynamicResource Divider}"
+                BorderThickness="0,0,0,1">
+            <DockPanel LastChildFill="True">
+
+                <Button DockPanel.Dock="Right" Style="{StaticResource CloseCaptionButton}"
+                        Click="Close_Click" ToolTip="Close" AutomationProperties.Name="Close">
+                    <Path Data="M 0,0 L 10,10 M 10,0 L 0,10" StrokeThickness="1"
+                          Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" />
+                </Button>
+
+                <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                    <Border Width="14" Height="14" CornerRadius="{StaticResource ControlCornerRadius}"
+                            Background="{DynamicResource AccentBackground}" />
+                    <TextBlock Text="HLA FOM Reader" Margin="9,0,0,0" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" />
+                    <TextBlock Text="Export to Excel" Margin="12,0,0,0" FontSize="11"
+                               Foreground="{DynamicResource TextDisabled}" VerticalAlignment="Center" />
+                </StackPanel>
+
+            </DockPanel>
+        </Border>
+
+        <!-- ============ Heading and search ============ -->
+        <StackPanel Grid.Row="1" Margin="20,18,20,0">
+
+            <TextBlock FontSize="15" FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource TextPrimary}">
+                <Run Text="Export" /><Run Text=" " /><Run Text="{Binding FomName, Mode=OneWay}" /><Run Text=" to Excel" />
+            </TextBlock>
+
+            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12.5"
+                       Foreground="{DynamicResource TextSecondary}"
+                       Text="Both class hierarchies are always written. Tick any classes whose members you also want, and each kind you pick adds a tab listing every attribute or parameter those classes have — inherited ones included. Ticking nothing is fine; you get the two hierarchy tabs on their own." />
+
+            <Grid Height="30" Margin="0,14,0,0">
+                <!-- Right padding clears the ✕, which floats over the box rather than beside it. -->
+                <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}"
+                         Tag="Search classes by name"
+                         Padding="9,0,30,0" />
+                <Button Style="{StaticResource SubtleButton}" Content="✕" Width="22" Height="22"
+                        HorizontalAlignment="Right" Margin="0,0,4,0" Padding="0"
+                        Command="{Binding ClearSearchCommand}"
+                        Visibility="{Binding HasSearchText, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}"
+                        ToolTip="Clear search" />
+            </Grid>
+
+        </StackPanel>
+
+        <!-- ============ The two pickers ============ -->
+        <Grid Grid.Row="2" Margin="20,14,20,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Object classes -->
+            <Border Grid.Column="0" Style="{StaticResource PaneCard}">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1"
+                            Background="{DynamicResource SurfaceAltBackground}"
+                            CornerRadius="{StaticResource ControlCornerRadius}" Padding="10,7">
+                        <TextBlock Style="{StaticResource PaneHeading}" Text="{Binding ObjectHeading}" />
+                    </Border>
+
+                    <!--
+                        Both in the fill child rather than the note docked above the tree: docked, a
+                        VerticalAlignment of Center has only the note's own height to centre in, so
+                        it draws jammed under the header. The two Visibility bindings are already
+                        mutually exclusive, so sharing a cell costs nothing.
+                    -->
+                    <Grid>
+                        <TreeView ItemsSource="{Binding ObjectClasses}"
+                                  BorderThickness="0" Background="Transparent" Padding="8,6"
+                                  ItemContainerStyle="{StaticResource ClassItemContainer}"
+                                  ItemTemplate="{StaticResource ClassTemplate}"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  Visibility="{Binding HasObjectClasses, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}" />
+
+                        <TextBlock Style="{StaticResource EmptyPaneText}"
+                                   Text="This FOM declares no object classes."
+                                   Visibility="{Binding HasObjectClasses, Converter={x:Static conv:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}" />
+                    </Grid>
+                </DockPanel>
+            </Border>
+
+            <!-- Interaction classes -->
+            <Border Grid.Column="2" Style="{StaticResource PaneCard}">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1"
+                            Background="{DynamicResource SurfaceAltBackground}"
+                            CornerRadius="{StaticResource ControlCornerRadius}" Padding="10,7">
+                        <TextBlock Style="{StaticResource PaneHeading}" Text="{Binding InteractionHeading}" />
+                    </Border>
+
+                    <!-- Paired in one cell for the same reason as the object pane above. -->
+                    <Grid>
+                        <TreeView ItemsSource="{Binding InteractionClasses}"
+                                  BorderThickness="0" Background="Transparent" Padding="8,6"
+                                  ItemContainerStyle="{StaticResource ClassItemContainer}"
+                                  ItemTemplate="{StaticResource ClassTemplate}"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  Visibility="{Binding HasInteractionClasses, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}" />
+
+                        <TextBlock Style="{StaticResource EmptyPaneText}"
+                                   Text="This FOM declares no interaction classes."
+                                   Visibility="{Binding HasInteractionClasses, Converter={x:Static conv:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}" />
+                    </Grid>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- ============ Bulk actions, summary and the commit ============ -->
+        <StackPanel Grid.Row="3" Margin="20,12,20,18">
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <!-- Captions change with the search, because so does what these two reach. -->
+                <Button Style="{StaticResource PaneButton}" Content="{Binding SelectAllCaption}" Margin="0"
+                        Command="{Binding SelectAllCommand}" />
+                <Button Style="{StaticResource PaneButton}" Content="{Binding SelectNoneCaption}"
+                        Command="{Binding SelectNoneCommand}" />
+                <Button Style="{StaticResource PaneButton}" Content="Expand all"
+                        Command="{Binding ExpandAllCommand}" />
+                <Button Style="{StaticResource PaneButton}" Content="Collapse all"
+                        Command="{Binding CollapseAllCommand}" />
+            </StackPanel>
+
+            <DockPanel LastChildFill="True" Margin="0,14,0,0">
+
+                <Button DockPanel.Dock="Right" x:Name="ExportButton" Content="Export…"
+                        Style="{StaticResource AccentButton}"
+                        Height="32" Padding="18,0" MinWidth="104" Margin="8,0,0,0"
+                        IsDefault="True" Click="Export_Click" />
+
+                <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource SubtleButton}"
+                        Height="32" Padding="18,0" MinWidth="88"
+                        IsCancel="True" />
+
+                <!-- Last, so it is measured against what the buttons left and its trimming has a width. -->
+                <TextBlock Text="{Binding Summary}" FontSize="11.5" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Margin="0,0,12,0"
+                           Foreground="{DynamicResource TextSecondary}" />
+
+            </DockPanel>
+
+        </StackPanel>
+
+    </Grid>
+</Window>

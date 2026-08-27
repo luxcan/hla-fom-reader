@@ -39,6 +39,13 @@ namespace HLAFomReader.Core.Reporting;
 /// Rows come out in the same depth-first order the app's tree shows, so a printed sheet and the
 /// screen can be read side by side.
 /// </para>
+/// <para>
+/// The two hierarchy sheets are always written. A caller may also hand over a
+/// <see cref="ClassExportSelection"/>, in which case <see cref="ClassMemberExporter"/> adds a tab
+/// of attributes and a tab of parameters for the classes it names. Those are an addition, never a
+/// filter: the hierarchy is the shape of the whole model, and a picture of part of a tree with the
+/// rest cut away is not a smaller true picture, it is a false one.
+/// </para>
 /// </remarks>
 public static class ClassHierarchyExporter
 {
@@ -47,12 +54,6 @@ public static class ClassHierarchyExporter
 
     /// <summary>Caption of the second tab.</summary>
     public const string InteractionSheetName = "Interaction Class Hierarchy";
-
-    /// <summary>
-    /// Recursion limit. The class trees are trees, but a hand-assembled or malformed document
-    /// could contain a cycle; the guard keeps the exporter from spinning.
-    /// </summary>
-    private const int MaxDepth = 64;
 
     /// <summary>Shown in place of rows when a FOM declares no classes of that kind at all.</summary>
     private const string NothingDeclared = "This FOM declares no classes of this kind.";
@@ -66,16 +67,33 @@ public static class ClassHierarchyExporter
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="document"/> or <paramref name="path"/> is null.</exception>
     /// <exception cref="System.IO.IOException">The file could not be written.</exception>
-    public static void Export(FomDocument document, string path, XlsxPalette? palette = null)
+    public static void Export(FomDocument document, string path, XlsxPalette? palette = null) =>
+        Export(document, path, ClassExportSelection.None, palette);
+
+    /// <summary>
+    /// Writes the workbook, with a tab of members for each class <paramref name="selection"/> names.
+    /// </summary>
+    /// <param name="document">The FOM to render.</param>
+    /// <param name="path">Destination <c>.xlsx</c> file, replaced if it exists.</param>
+    /// <param name="selection">
+    /// Classes whose members are wanted as well. <see cref="ClassExportSelection.None"/> — or an
+    /// empty selection — gives exactly the two-sheet workbook this export has always produced.
+    /// </param>
+    /// <param name="palette">Colours for the header band and the grid. Null takes <see cref="XlsxPalette.Default"/>.</param>
+    /// <exception cref="ArgumentNullException">Any of <paramref name="document"/>, <paramref name="path"/> or <paramref name="selection"/> is null.</exception>
+    /// <exception cref="System.IO.IOException">The file could not be written.</exception>
+    public static void Export(
+        FomDocument document, string path, ClassExportSelection selection, XlsxPalette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(selection);
 
-        XlsxWriter.Write(path, BuildSheets(document), palette);
+        XlsxWriter.Write(path, BuildSheets(document, selection), palette);
     }
 
     /// <summary>
-    /// Builds the two sheets without writing them, so the layout can be asserted directly.
+    /// Builds the two hierarchy sheets without writing them, so the layout can be asserted directly.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
     public static IReadOnlyList<XlsxSheet> BuildSheets(FomDocument document)
@@ -89,22 +107,40 @@ public static class ClassHierarchyExporter
         };
     }
 
+    /// <summary>
+    /// Builds every sheet the workbook will hold: the two hierarchies, then whatever member sheets
+    /// <paramref name="selection"/> earns.
+    /// </summary>
+    /// <returns>
+    /// Two sheets for an empty selection, and up to four otherwise. Tab order is hierarchies first:
+    /// the workbook opens on the shape of the model, and the detail sits behind it.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Either argument is null.</exception>
+    public static IReadOnlyList<XlsxSheet> BuildSheets(FomDocument document, ClassExportSelection selection)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(selection);
+
+        var sheets = new List<XlsxSheet>(BuildSheets(document));
+        sheets.AddRange(ClassMemberExporter.BuildSheets(document, selection));
+
+        return sheets;
+    }
+
     // ------------------------------------------------------------------- object classes
 
     private static XlsxSheet BuildObjectSheet(FomDocument document)
     {
-        var rows = new List<ObjectRow>();
-        var visited = new HashSet<FomObjectClass>(ReferenceEqualityComparer.Instance);
-
-        foreach (var root in document.ObjectClasses)
-            WalkObjects(root, new List<FomObjectClass>(), rows, visited);
+        var rows = ClassWalk.Objects(document);
 
         var depth = rows.Count == 0 ? 1 : rows.Max(r => r.Level);
         var sheet = NewSheet(ObjectSheetName, depth, "Attributes declared", "Attributes inherited", "Attributes total");
 
         foreach (var row in rows)
         {
-            var (own, inherited) = MemberCounts(row.Ancestors, row.Class, c => c.Attributes.Select(a => a.Name));
+            var (own, inherited) = MemberCounts(
+                FomInheritance.Effective(row.Ancestors, row.Class, c => c.Attributes, a => a.Name), row.Class);
+
             sheet.Rows.Add(BodyRow(depth, row.Level, row.Class.Name, QualifiedName(row.Class), row.Class.Sharing, own, inherited));
         }
 
@@ -112,42 +148,22 @@ public static class ClassHierarchyExporter
         else MergeSubtreeSpans(sheet, rows.Select(r => r.Level).ToList());
 
         return sheet;
-    }
-
-    private readonly record struct ObjectRow(FomObjectClass Class, int Level, IReadOnlyList<FomObjectClass> Ancestors);
-
-    private static void WalkObjects(
-        FomObjectClass? node,
-        List<FomObjectClass> ancestors,
-        List<ObjectRow> rows,
-        HashSet<FomObjectClass> visited)
-    {
-        if (node is null || ancestors.Count >= MaxDepth || !visited.Add(node)) return;
-
-        rows.Add(new ObjectRow(node, ancestors.Count + 1, ancestors.ToArray()));
-
-        ancestors.Add(node);
-        foreach (var child in node.Children)
-            WalkObjects(child, ancestors, rows, visited);
-        ancestors.RemoveAt(ancestors.Count - 1);
     }
 
     // ------------------------------------------------------------------- interaction classes
 
     private static XlsxSheet BuildInteractionSheet(FomDocument document)
     {
-        var rows = new List<InteractionRow>();
-        var visited = new HashSet<FomInteractionClass>(ReferenceEqualityComparer.Instance);
-
-        foreach (var root in document.InteractionClasses)
-            WalkInteractions(root, new List<FomInteractionClass>(), rows, visited);
+        var rows = ClassWalk.Interactions(document);
 
         var depth = rows.Count == 0 ? 1 : rows.Max(r => r.Level);
         var sheet = NewSheet(InteractionSheetName, depth, "Parameters declared", "Parameters inherited", "Parameters total");
 
         foreach (var row in rows)
         {
-            var (own, inherited) = MemberCounts(row.Ancestors, row.Class, c => c.Parameters.Select(p => p.Name));
+            var (own, inherited) = MemberCounts(
+                FomInheritance.Effective(row.Ancestors, row.Class, c => c.Parameters, p => p.Name), row.Class);
+
             sheet.Rows.Add(BodyRow(depth, row.Level, row.Class.Name, QualifiedName(row.Class), row.Class.Sharing, own, inherited));
         }
 
@@ -155,24 +171,6 @@ public static class ClassHierarchyExporter
         else MergeSubtreeSpans(sheet, rows.Select(r => r.Level).ToList());
 
         return sheet;
-    }
-
-    private readonly record struct InteractionRow(FomInteractionClass Class, int Level, IReadOnlyList<FomInteractionClass> Ancestors);
-
-    private static void WalkInteractions(
-        FomInteractionClass? node,
-        List<FomInteractionClass> ancestors,
-        List<InteractionRow> rows,
-        HashSet<FomInteractionClass> visited)
-    {
-        if (node is null || ancestors.Count >= MaxDepth || !visited.Add(node)) return;
-
-        rows.Add(new InteractionRow(node, ancestors.Count + 1, ancestors.ToArray()));
-
-        ancestors.Add(node);
-        foreach (var child in node.Children)
-            WalkInteractions(child, ancestors, rows, visited);
-        ancestors.RemoveAt(ancestors.Count - 1);
     }
 
     // ------------------------------------------------------------------- shared shape
@@ -290,25 +288,19 @@ public static class ClassHierarchyExporter
     }
 
     /// <summary>
-    /// Splits a class's effective members into those it declares and those it inherits.
+    /// Tallies <see cref="FomInheritance"/> into the declared/inherited split the sheet reports.
     /// </summary>
     /// <remarks>
-    /// The rule mirrors the FOM detail screen exactly — ancestors are walked root-first and a name
-    /// already seen is skipped, so a redeclared member is counted once, against the ancestor that
-    /// introduced it. The two must agree: a sheet that disagrees with the screen it was exported
-    /// from is worse than no sheet.
+    /// Counted off the same list the member sheets write out rather than recomputed, so the totals
+    /// beside a class cannot disagree with the rows exported for it — or with the FOM detail screen,
+    /// which applies the same rule. A sheet that disagrees with the screen it came from is worse
+    /// than no sheet, and one that disagrees with itself is worse again.
     /// </remarks>
-    private static (int Own, int Inherited) MemberCounts<T>(
-        IReadOnlyList<T> ancestors, T self, Func<T, IEnumerable<string>> members) where T : class
+    private static (int Own, int Inherited) MemberCounts<TOwner, TMember>(
+        IReadOnlyList<(TOwner Owner, TMember Member)> effective, TOwner self) where TOwner : class
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var inherited = 0;
-
-        foreach (var ancestor in ancestors)
-            inherited += members(ancestor).Count(seen.Add);
-
-        var own = members(self).Count(seen.Add);
-        return (own, inherited);
+        var own = effective.Count(e => ReferenceEquals(e.Owner, self));
+        return (own, effective.Count - own);
     }
 
     /// <summary>The dotted path, falling back to the local name when the parser did not record one.</summary>

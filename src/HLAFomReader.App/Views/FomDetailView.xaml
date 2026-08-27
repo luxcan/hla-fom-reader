@@ -91,7 +91,7 @@
                 <Button DockPanel.Dock="Right" Style="{StaticResource AccentButton}" Content="Export to Excel…"
                         Height="30" Padding="14,0" VerticalAlignment="Center"
                         Command="{Binding ExportHierarchyCommand}"
-                        ToolTip="Write the object and interaction class hierarchies to an .xlsx workbook" />
+                        ToolTip="Write the object and interaction class hierarchies to an .xlsx workbook, and a tab of attributes or parameters for any classes you pick" />
 
                 <Button DockPanel.Dock="Right" Style="{StaticResource SubtleButton}" Content="Collapse all"
                         Height="30" Padding="11,0" Margin="0,0,10,0" VerticalAlignment="Center"
