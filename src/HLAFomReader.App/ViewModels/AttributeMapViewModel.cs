@@ -125,7 +125,11 @@ public sealed class AttributeMapViewModel : ViewModelBase
     // everything it carries, changed or not — rather than as a filtered to-do list.
     private bool _onlyDifferences;
     private string _searchText = "";
-    private bool _showSame;
+
+    // Every chip starts on, to agree with _onlyDifferences being off. Same and Renamed in
+    // particular have to start together: one chip covers both statuses, so a pair that starts
+    // apart puts the grid and the chip at odds before the user has touched either.
+    private bool _showSame = true;
     private bool _showChanged = true;
     private bool _showRenamed = true;
     private bool _showMoved = true;
@@ -279,10 +283,13 @@ public sealed class AttributeMapViewModel : ViewModelBase
         {
             if (!SetProperty(ref _onlyDifferences, value)) return;
 
-            // This checkbox and the "Same" chip are two controls over one idea, so the field is set
-            // directly rather than through the sibling property — that notifies without re-filtering
-            // twice or bouncing back into this setter.
+            // This checkbox and the "Same" chip are two controls over one idea, so the fields are
+            // set directly rather than through the sibling property — that notifies without
+            // re-filtering twice or bouncing back into this setter. Both statuses move together for
+            // the reason the chip's own setter moves them: the chip is one control over the pair, and
+            // leaving Renamed behind would show rows the chip reports as hidden.
             SetProperty(ref _showSame, !value, nameof(ShowSame));
+            SetProperty(ref _showRenamed, !value, nameof(ShowRenamed));
             ApplyFilter();
         }
     }
@@ -298,7 +305,6 @@ public sealed class AttributeMapViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Show attributes that match on both sides. Mirrors <see cref="OnlyDifferences"/>.</summary>
     /// <summary>
     /// Shows the rows that need no work: identical datatypes, and datatypes that were only renamed.
     /// One control for both, because the screen presents them as one thing.
