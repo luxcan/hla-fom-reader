@@ -42,19 +42,65 @@ public enum AttributeMapStatus
 
     /// <summary>In FOM B only. Nothing in A feeds it.</summary>
     OnlyInRight = 4,
+
+    /// <summary>
+    /// No comparison has been made, because only one side has a class chosen. The attribute is
+    /// reported as that side carries it, with the other side's columns blank.
+    /// </summary>
+    /// <remarks>
+    /// This is the absence of a verdict rather than a verdict, and keeping it out of
+    /// <see cref="OnlyInLeft"/> is what stops the screen lying to a user halfway through choosing.
+    /// Picking Aircraft on A alone would otherwise report its 45 inherited attributes as 45 things
+    /// FOM B has lost, count them in <see cref="AttributeDataMap.ActionableCount"/>, and light up
+    /// the "Only in A" chip — an assertion about FOM B that nothing has yet been compared against.
+    /// So it draws no status pill, counts towards nothing, and is not work.
+    /// </remarks>
+    Unpaired = 6,
 }
 
 /// <summary>One attribute of one object class, as it exists on each side.</summary>
 public sealed class AttributeMapRow
 {
+    /// <summary>
+    /// The class the row belongs to: FOM A's, or FOM B's on a row only the B side has.
+    /// </summary>
+    /// <remarks>
+    /// On a whole-FOM map this is the one class both sides matched on. On a class-pair map the two
+    /// classes may be named differently, and the pair is then a property of
+    /// <see cref="AttributeDataMap.LeftClassName"/> and <see cref="AttributeDataMap.RightClassName"/>
+    /// rather than of the row — repeating a single name here would say the two sides agreed on it.
+    /// </remarks>
     public required string ClassName { get; init; }
+
+    /// <summary>The attribute name as FOM A spells it, or FOM B's when only B carries it.</summary>
     public required string AttributeName { get; init; }
+
+    /// <summary>
+    /// FOM B's own spelling, when the two sides matched on a normalised name they spell differently
+    /// — <c>privilegeToDelete</c> against <c>HLAprivilegeToDeleteObject</c>. Null when they agree.
+    /// </summary>
+    public string? RightAttributeName { get; init; }
 
     /// <summary>The class that declares it in FOM A — may be an ancestor, since attributes are inherited.</summary>
     public string? LeftDeclaredIn { get; init; }
+
+    /// <summary>
+    /// The dotted name of the declaring class in FOM A.
+    /// </summary>
+    /// <remarks>
+    /// The local name alone is enough on a whole-FOM map, where both sides walk one matched tree.
+    /// Once the two classes are chosen independently they may sit in unrelated hierarchies that both
+    /// carry a <c>Platform</c>, and only the qualified name says which one declared the attribute.
+    /// </remarks>
+    public string? LeftDeclaredInQualified { get; init; }
+
     public string? LeftDataType { get; init; }
 
     public string? RightDeclaredIn { get; init; }
+
+    /// <summary>The dotted name of the declaring class in FOM B; see <see cref="LeftDeclaredInQualified"/>.</summary>
+    public string? RightDeclaredInQualified { get; init; }
+
     public string? RightDataType { get; init; }
 
     /// <summary>
@@ -73,7 +119,13 @@ public sealed class AttributeMapRow
     /// <summary>Why, when the reason is structural — e.g. a FED carrying no datatypes at all.</summary>
     public string? Note { get; init; }
 
-    public bool IsDifferent => Status != AttributeMapStatus.Same;
+    /// <summary>
+    /// True when the two sides were compared and did not agree. An
+    /// <see cref="AttributeMapStatus.Unpaired"/> row answers false: nothing was compared, so nothing
+    /// can be said to differ.
+    /// </summary>
+    public bool IsDifferent =>
+        Status != AttributeMapStatus.Same && Status != AttributeMapStatus.Unpaired;
 
     /// <summary>
     /// True when both sides resolved to an encoding and those encodings differ — the row moves
@@ -121,6 +173,23 @@ public sealed class AttributeDataMap
     public string LeftLabel { get; init; } = "FOM A";
     public string RightLabel { get; init; } = "FOM B";
 
+    /// <summary>
+    /// The qualified name of the class chosen on the A side, or null — for a whole-FOM
+    /// <see cref="AttributeMapper.Build"/>, or for a class-pair map with nothing chosen on A.
+    /// </summary>
+    /// <remarks>
+    /// Held on the map rather than on every row because with two independently chosen classes this
+    /// is one fact per side, not one repeated against each of forty-five attributes where it could
+    /// no longer say which side it belonged to.
+    /// </remarks>
+    public string? LeftClassName { get; init; }
+
+    /// <summary>The qualified name of the class chosen on the B side; see <see cref="LeftClassName"/>.</summary>
+    public string? RightClassName { get; init; }
+
+    /// <summary>True when a class was chosen on both sides, so the rows are a real comparison.</summary>
+    public bool ComparesBothSides => LeftClassName is not null && RightClassName is not null;
+
     /// <summary>Notes about fidelity, e.g. one side being a FED with no datatype table.</summary>
     public List<string> Advisories { get; } = new();
 
@@ -136,6 +205,9 @@ public sealed class AttributeDataMap
     public int OnlyInLeftCount => Rows.Count(r => r.Status == AttributeMapStatus.OnlyInLeft);
     public int OnlyInRightCount => Rows.Count(r => r.Status == AttributeMapStatus.OnlyInRight);
 
+    /// <summary>Rows listed from one side because the other has no class chosen yet.</summary>
+    public int UnpairedCount => Rows.Count(r => r.Status == AttributeMapStatus.Unpaired);
+
     /// <summary>
     /// Rows that need a decision when remapping: a real re-encoding, or an attribute one side has
     /// and the other does not.
@@ -143,8 +215,50 @@ public sealed class AttributeDataMap
     /// <remarks>
     /// Renames are excluded on purpose, as are moves. Neither costs the reader anything, and
     /// counting them here would restore exactly the noise the encoding resolution exists to remove.
+    /// Unpaired rows are excluded because they are not a finding at all: a class chosen on one side
+    /// only has been compared against nothing.
     /// </remarks>
     public int ActionableCount => DataTypeChangedCount + OnlyInLeftCount + OnlyInRightCount;
 
     public static AttributeDataMap Empty() => new() { Rows = new List<AttributeMapRow>() };
+}
+
+/// <summary>One object class in a FOM, as a class picker lists it.</summary>
+/// <remarks>
+/// The count is the <b>effective</b> attribute set — declared plus inherited — and is worked out by
+/// the mapper's own resolution rather than read off the class, so the figure beside a name in the
+/// picker is exactly the number of rows choosing that class produces. A count taken from anywhere
+/// else would disagree the moment name folding applied, since the mapper matches
+/// <c>privilegeToDelete</c> onto <c>HLAprivilegeToDeleteObject</c> and a raw walk does not.
+/// </remarks>
+/// <param name="QualifiedName">The dotted name, e.g. <c>ObjectRoot.BaseEntity.Platform.Aircraft</c>.</param>
+/// <param name="AttributeCount">Size of the class's effective attribute set.</param>
+public sealed record ObjectClassSummary(string QualifiedName, int AttributeCount);
+
+/// <summary>
+/// The wording used for a row's status wherever a person sees it.
+/// </summary>
+/// <remarks>
+/// In Core because the exported worksheet writes these words too, and a sheet that disagrees with
+/// the screen it was taken from is worse than no sheet. The App's badge, its chips and the CSV all
+/// read from here.
+/// </remarks>
+public static class AttributeMapStatusText
+{
+    /// <summary>The label for one status, or <c>""</c> where the screen deliberately shows none.</summary>
+    public static string Label(AttributeMapStatus status) => status switch
+    {
+        AttributeMapStatus.Same => "Same",
+        AttributeMapStatus.DataTypeChanged => "Changed",
+        // A rename needs no conversion, so it reads as Same everywhere the user sees it —
+        // badge, chip and CSV alike. The datatype columns still show the two names.
+        AttributeMapStatus.Renamed => "Same",
+        AttributeMapStatus.Moved => "Moved",
+        AttributeMapStatus.OnlyInLeft => "Only in A",
+        AttributeMapStatus.OnlyInRight => "Only in B",
+        // Blank, not "Unpaired": the cell is empty because no comparison was made, and a word here
+        // would read as a verdict on a row that carries none.
+        AttributeMapStatus.Unpaired => "",
+        _ => "",
+    };
 }

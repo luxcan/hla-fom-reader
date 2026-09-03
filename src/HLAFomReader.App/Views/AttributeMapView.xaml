@@ -30,6 +30,64 @@
         </Style>
 
         <!--
+            A class picker you type into to narrow the list.
+
+            IsTextSearchEnabled is OFF and has to be. With IsEditable set, WPF's own text search
+            rewrites the edit box on every keystroke with the first item whose text STARTS with what
+            was typed, and moves the selection to it. That is prefix-only, so typing "craft" for
+            Aircraft matches nothing, while every keystroke that does match overwrites the word being
+            typed. Substring filtering and built-in text search cannot both be on.
+
+            TextSearch.TextPath stays: the ComboBox also uses it to work out what to show in the
+            field once a class is chosen, which is the leaf name rather than the whole dotted path.
+
+            IsSynchronizedWithCurrentItem is OFF because the source is an ICollectionView, and a
+            view's Refresh resets its current item to the first row that survives the filter. Left
+            at its default the selection would jump to the top match on every keystroke, firing a
+            comparison per letter typed.
+        -->
+        <Style x:Key="ClassPicker" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="IsEditable" Value="True" />
+            <Setter Property="IsTextSearchEnabled" Value="False" />
+            <Setter Property="IsSynchronizedWithCurrentItem" Value="False" />
+            <Setter Property="StaysOpenOnEdit" Value="True" />
+            <Setter Property="TextSearch.TextPath" Value="LeafName" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MaxDropDownHeight" Value="360" />
+        </Style>
+
+        <!--
+            The leaf name leads, and it has to: every class here is called
+            ObjectRoot.something.something.X, so a list led by qualified names would be a column of
+            identical prefixes. The path trails it as quiet context, capped and trimmed so a deep
+            hierarchy cannot stretch the drop-down open, and the effective attribute count sits on
+            the right — the same number of rows picking that class produces.
+        -->
+        <DataTemplate x:Key="ClassOptionTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="{Binding LeafName}" FontSize="12"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimary}" />
+
+                <!-- Path=Path spelled out: the property really is called Path. -->
+                <TextBlock Grid.Column="1" Text="{Binding Path=Path}" FontSize="10"
+                           MaxWidth="200" Margin="8,0,8,0" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource TextDisabled}" />
+
+                <TextBlock Grid.Column="2" Text="{Binding AttributeCount}" FontSize="10"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondary}" />
+            </Grid>
+        </DataTemplate>
+
+        <!--
             The status palette. Same four colours the difference tree uses, so the two tabs read
             alike, plus a grey for Moved: inheritance means a moved attribute is still available on
             the class, so it is context rather than work. Renamed is quieter still — a flat control
@@ -64,6 +122,11 @@
                 <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.Same}">
                     <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
                 </DataTrigger>
+                <!-- No pill at all while only one class is chosen. The row has been compared against
+                     nothing, and any badge there would be read as a verdict on the other side. -->
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.Unpaired}">
+                    <Setter Property="Background" Value="Transparent" />
+                </DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -87,6 +150,9 @@
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.Moved}">
                     <Setter Property="Text" Value="Moved" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static cmp:AttributeMapStatus.Unpaired}">
+                    <Setter Property="Text" Value="" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -174,162 +240,191 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="34" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- ============ Filters ============ -->
+        <!-- ============ The class pair, then the filters ============ -->
         <Border Grid.Row="0" Background="{DynamicResource SurfaceAltBackground}"
                 BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
             <!--
-                One row, never two: the strip is a fixed 34 DIP and anything that wrapped would be
-                clipped rather than shown. Everything but the search box is Auto-width, so when the
-                window narrows it is the search box that gives — down to 120 DIP, still wide enough
-                to type a datatype name into — instead of a chip or the headline being cut off.
+                Two fixed rows inside one border. The pickers are the screen's primary control and
+                need real width to show a class name, and the chips, the search box and the headline
+                already filled a 34 DIP strip on their own: putting all of it on one line meant
+                something was always clipped rather than shown.
             -->
             <Grid Margin="14,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" MinWidth="120" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="36" />
+                    <RowDefinition Height="34" />
+                </Grid.RowDefinitions>
 
                 <!--
-                    The class scope, first because it is now the primary control: the question this
-                    screen answers is almost always about one class, and 1690 rows of every class at
-                    once is the thing standing in the way of it.
+                    The pair being compared. Two independent pickers, because the counterpart of a
+                    class across a version step is rarely the same name: RPR 2.0 reworks the
+                    hierarchy RPR 1.0 declared, and saying which new class the old one becomes is
+                    the judgement this screen exists to support.
                 -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
-                            Margin="0,0,12,0">
-                    <ComboBox Width="260" Height="24" MinHeight="24" VerticalAlignment="Center"
-                              ItemsSource="{Binding ObjectClasses}"
-                              SelectedItem="{Binding SelectedObjectClass}"
-                              HorizontalContentAlignment="Stretch"
-                              IsTextSearchEnabled="True" TextSearch.TextPath="LeafName"
-                              ToolTip="Show only one object class — everything it declares plus everything it inherits. Type a name to jump to it.">
-                        <!--
-                            The leaf name leads, and it has to: every class here is called
-                            ObjectRoot.something.something.X, so a list of qualified names would make
-                            type-to-select match "ObjectRoot" on the first keystroke and never get
-                            any further. The path trails it as quiet context, capped and trimmed so a
-                            deep hierarchy cannot stretch the drop-down open.
-                        -->
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
+                <Grid x:Name="ClassPairRow" Grid.Row="0" VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="140" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="140" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                                    <TextBlock Grid.Column="0" Text="{Binding LeafName}" FontSize="12"
-                                               VerticalAlignment="Center"
-                                               Foreground="{DynamicResource TextPrimary}" />
+                    <TextBlock Grid.Column="0" Text="A" FontSize="11.5" FontWeight="SemiBold"
+                               VerticalAlignment="Center" Margin="0,0,8,0"
+                               Foreground="{DynamicResource TextSecondary}"
+                               ToolTip="{Binding LeftLabel}" />
 
-                                    <!-- Path=Path spelled out: the property really is called Path. -->
-                                    <TextBlock Grid.Column="1" Text="{Binding Path=Path}" FontSize="10"
-                                               MaxWidth="140" Margin="8,0,8,0" VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis"
-                                               Foreground="{DynamicResource TextDisabled}" />
+                    <ComboBox x:Name="ClassPickerA" Grid.Column="1" Height="24" MinHeight="24"
+                              VerticalAlignment="Center" HorizontalContentAlignment="Stretch"
+                              Style="{StaticResource ClassPicker}"
+                              ItemsSource="{Binding ClassesA}"
+                              SelectedItem="{Binding SelectedClassA, Mode=TwoWay}"
+                              ItemTemplate="{StaticResource ClassOptionTemplate}"
+                              GotKeyboardFocus="OnClassPickerGotFocus"
+                              PreviewTextInput="OnClassPickerTextInput"
+                              PreviewKeyDown="OnClassPickerKeyDown"
+                              TextBoxBase.TextChanged="OnClassPickerTextChanged"
+                              DropDownClosed="OnClassPickerDropDownClosed"
+                              ToolTip="The class in FOM A — everything it declares plus everything it inherits. Type any part of a name to narrow the list." />
 
-                                    <TextBlock Grid.Column="2" Text="{Binding RowCount}" FontSize="10"
-                                               HorizontalAlignment="Right" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource TextSecondary}" />
-                                </Grid>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
+                    <Button Grid.Column="2" Style="{StaticResource SubtleButton}" Content="✕"
+                            Width="22" Height="22" Margin="4,0,0,0" Padding="0" FontSize="11"
+                            VerticalAlignment="Center"
+                            Command="{Binding ClearClassACommand}"
+                            Visibility="{Binding HasClassA, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}"
+                            ToolTip="Unpick this class" />
 
-                    <Button Style="{StaticResource SubtleButton}" Content="✕" Width="22" Height="22"
-                            Margin="4,0,0,0" Padding="0" FontSize="11" VerticalAlignment="Center"
-                            Command="{Binding ClearClassScopeCommand}"
-                            Visibility="{Binding IsClassScoped, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}"
-                            ToolTip="Show every class again" />
-                </StackPanel>
+                    <TextBlock Grid.Column="3" Text="→" FontSize="13" VerticalAlignment="Center"
+                               Margin="10,0,10,0" Foreground="{DynamicResource TextDisabled}"
+                               ToolTip="Data moves from the class on the left onto the class on the right" />
 
-                <CheckBox Grid.Column="1" Style="{StaticResource FilterCheck}"
-                          Content="Only rows that need attention" IsChecked="{Binding OnlyDifferences}"
-                          ToolTip="Hide attributes that carry the same data on both sides, and those whose datatype was only renamed" />
+                    <TextBlock Grid.Column="4" Text="B" FontSize="11.5" FontWeight="SemiBold"
+                               VerticalAlignment="Center" Margin="0,0,8,0"
+                               Foreground="{DynamicResource TextSecondary}"
+                               ToolTip="{Binding RightLabel}" />
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
-                            Margin="0,0,6,0">
+                    <ComboBox x:Name="ClassPickerB" Grid.Column="5" Height="24" MinHeight="24"
+                              VerticalAlignment="Center" HorizontalContentAlignment="Stretch"
+                              Style="{StaticResource ClassPicker}"
+                              ItemsSource="{Binding ClassesB}"
+                              SelectedItem="{Binding SelectedClassB, Mode=TwoWay}"
+                              ItemTemplate="{StaticResource ClassOptionTemplate}"
+                              GotKeyboardFocus="OnClassPickerGotFocus"
+                              PreviewTextInput="OnClassPickerTextInput"
+                              PreviewKeyDown="OnClassPickerKeyDown"
+                              TextBoxBase.TextChanged="OnClassPickerTextChanged"
+                              DropDownClosed="OnClassPickerDropDownClosed"
+                              ToolTip="The class in FOM B this data would move onto. It does not have to be named the same as the class in A." />
 
-                    <ToggleButton Style="{StaticResource KindToggle}"
-                                  IsChecked="{Binding ShowChanged}"
-                                  ToolTip="Present in both FOMs but encoded differently — the values need converting">
-                        <TextBlock>
-                            <Run Text="~ Changed " />
-                            <Run Text="{Binding ChangedCount, Mode=OneWay}" FontWeight="SemiBold" />
-                        </TextBlock>
-                    </ToggleButton>
-
-
-                    <ToggleButton Style="{StaticResource KindToggle}"
-                                  IsChecked="{Binding ShowMoved}"
-                                  ToolTip="Declared on a different class, but inherited and identically typed — nothing to convert">
-                        <TextBlock>
-                            <Run Text="→ Moved " />
-                            <Run Text="{Binding MovedCount, Mode=OneWay}" FontWeight="SemiBold" />
-                        </TextBlock>
-                    </ToggleButton>
-
-                    <ToggleButton Style="{StaticResource KindToggle}"
-                                  IsChecked="{Binding ShowOnlyLeft}"
-                                  ToolTip="In FOM A only — data for it has nowhere to go">
-                        <TextBlock>
-                            <Run Text="− Only in A " />
-                            <Run Text="{Binding OnlyLeftCount, Mode=OneWay}" FontWeight="SemiBold" />
-                        </TextBlock>
-                    </ToggleButton>
-
-                    <ToggleButton Style="{StaticResource KindToggle}"
-                                  IsChecked="{Binding ShowOnlyRight}"
-                                  ToolTip="In FOM B only — nothing in FOM A feeds it">
-                        <TextBlock>
-                            <Run Text="+ Only in B " />
-                            <Run Text="{Binding OnlyRightCount, Mode=OneWay}" FontWeight="SemiBold" />
-                        </TextBlock>
-                    </ToggleButton>
-
-                    <!-- One chip for "no work": identical datatypes and pure renames alike. -->
-                    <ToggleButton Style="{StaticResource KindToggle}"
-                                  IsChecked="{Binding ShowSame}" Margin="0,0,0,0"
-                                  ToolTip="Show the attributes that carry the same data on both sides, including those whose datatype was only renamed">
-                        <TextBlock>
-                            <Run Text="= Same " />
-                            <Run Text="{Binding SameOrRenamedCount, Mode=OneWay}" FontWeight="SemiBold" />
-                        </TextBlock>
-                    </ToggleButton>
-
-                </StackPanel>
-
-                <Grid Grid.Column="3" Height="24" MinWidth="120" Margin="6,0,10,0"
-                      HorizontalAlignment="Stretch" VerticalAlignment="Center">
-                    <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}"
-                             Tag="Filter class, attribute or datatype" FontSize="11.5" Height="24"
-                             VerticalContentAlignment="Center"
-                             ToolTip="Matches the class, the attribute, either datatype name and either resolved encoding" />
-                    <Button Style="{StaticResource SubtleButton}" Content="✕" Width="22" Height="22"
-                            HorizontalAlignment="Right" Margin="0,0,4,0" Padding="0" FontSize="11"
-                            Command="{Binding ClearSearchCommand}"
-                            Visibility="{Binding SearchText, Converter={x:Static conv:StringEmptyToVisibilityConverter.Instance}}"
-                            ToolTip="Clear the attribute filter" />
+                    <Button Grid.Column="6" Style="{StaticResource SubtleButton}" Content="✕"
+                            Width="22" Height="22" Margin="4,0,0,0" Padding="0" FontSize="11"
+                            VerticalAlignment="Center"
+                            Command="{Binding ClearClassBCommand}"
+                            Visibility="{Binding HasClassB, Converter={x:Static conv:BoolToVisibilityConverter.Instance}}"
+                            ToolTip="Unpick this class" />
                 </Grid>
 
-                <Button Grid.Column="4" Style="{StaticResource SubtleButton}" Content="Export CSV…"
-                        Height="22" Padding="9,0" FontSize="11.5" VerticalAlignment="Center"
-                        Command="{Binding ExportCsvCommand}"
-                        ToolTip="Write the rows shown here to a CSV remap worksheet" />
+                <!--
+                    One row, never two: this strip is a fixed 34 DIP and anything that wrapped would
+                    be clipped rather than shown. Everything but the search box is Auto-width, so
+                    when the window narrows it is the search box that gives — down to 120 DIP, still
+                    wide enough to type a datatype name into — instead of a chip or the headline
+                    being cut off.
+                -->
+                <Grid x:Name="FilterStrip" Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="120" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="5" Text="{Binding Summary}" VerticalAlignment="Center"
-                           Margin="12,0,0,0" FontSize="11.5" TextTrimming="CharacterEllipsis"
-                           Foreground="{DynamicResource TextSecondary}" />
+                    <CheckBox Grid.Column="0" Style="{StaticResource FilterCheck}"
+                              Content="Only rows that need attention" IsChecked="{Binding OnlyDifferences}"
+                              ToolTip="Hide attributes that carry the same data on both sides, and those whose datatype was only renamed" />
 
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                                Margin="0,0,6,0">
+
+                        <ToggleButton Style="{StaticResource KindToggle}"
+                                      IsChecked="{Binding ShowChanged}"
+                                      ToolTip="Present on both sides but encoded differently — the values need converting">
+                            <TextBlock>
+                                <Run Text="~ Changed " />
+                                <Run Text="{Binding ChangedCount, Mode=OneWay}" FontWeight="SemiBold" />
+                            </TextBlock>
+                        </ToggleButton>
+
+                        <ToggleButton Style="{StaticResource KindToggle}"
+                                      IsChecked="{Binding ShowMoved}"
+                                      ToolTip="Declared on a different class, but inherited and identically typed — nothing to convert">
+                            <TextBlock>
+                                <Run Text="→ Moved " />
+                                <Run Text="{Binding MovedCount, Mode=OneWay}" FontWeight="SemiBold" />
+                            </TextBlock>
+                        </ToggleButton>
+
+                        <ToggleButton Style="{StaticResource KindToggle}"
+                                      IsChecked="{Binding ShowOnlyLeft}"
+                                      ToolTip="In FOM A's class only — data for it has nowhere to go">
+                            <TextBlock>
+                                <Run Text="− Only in A " />
+                                <Run Text="{Binding OnlyLeftCount, Mode=OneWay}" FontWeight="SemiBold" />
+                            </TextBlock>
+                        </ToggleButton>
+
+                        <ToggleButton Style="{StaticResource KindToggle}"
+                                      IsChecked="{Binding ShowOnlyRight}"
+                                      ToolTip="In FOM B's class only — nothing in FOM A feeds it">
+                            <TextBlock>
+                                <Run Text="+ Only in B " />
+                                <Run Text="{Binding OnlyRightCount, Mode=OneWay}" FontWeight="SemiBold" />
+                            </TextBlock>
+                        </ToggleButton>
+
+                        <!-- One chip for "no work": identical datatypes and pure renames alike. -->
+                        <ToggleButton Style="{StaticResource KindToggle}"
+                                      IsChecked="{Binding ShowSame}" Margin="0,0,0,0"
+                                      ToolTip="Show the attributes that carry the same data on both sides, including those whose datatype was only renamed">
+                            <TextBlock>
+                                <Run Text="= Same " />
+                                <Run Text="{Binding SameOrRenamedCount, Mode=OneWay}" FontWeight="SemiBold" />
+                            </TextBlock>
+                        </ToggleButton>
+
+                    </StackPanel>
+
+                    <Grid Grid.Column="2" Height="24" MinWidth="120" Margin="6,0,10,0"
+                          HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}"
+                                 Tag="Filter attribute or datatype" FontSize="11.5" Height="24"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="Matches the attribute, either datatype name and either resolved encoding" />
+                        <Button Style="{StaticResource SubtleButton}" Content="✕" Width="22" Height="22"
+                                HorizontalAlignment="Right" Margin="0,0,4,0" Padding="0" FontSize="11"
+                                Command="{Binding ClearSearchCommand}"
+                                Visibility="{Binding SearchText, Converter={x:Static conv:StringEmptyToVisibilityConverter.Instance}}"
+                                ToolTip="Clear the attribute filter" />
+                    </Grid>
+
+                    <Button Grid.Column="3" Style="{StaticResource SubtleButton}" Content="Export Excel…"
+                            Height="22" Padding="9,0" FontSize="11.5" VerticalAlignment="Center"
+                            Command="{Binding ExportCommand}"
+                            ToolTip="Write the rows shown here to an Excel worksheet: each side's attributes as a Level 1 / Level 2 / Level 3 staircase, side by side" />
+
+                    <TextBlock Grid.Column="4" Text="{Binding Summary}" VerticalAlignment="Center"
+                               Margin="12,0,0,0" FontSize="11.5" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextSecondary}" />
+                </Grid>
             </Grid>
         </Border>
 
@@ -367,16 +462,12 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
-                    <DataGridTemplateColumn Header="Object class" Width="1.6*" SortMemberPath="ClassName">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <TextBlock Style="{StaticResource NameCell}" Text="{Binding ClassName}"
-                                           ToolTip="{Binding ClassName}" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-
-                    <DataGridTemplateColumn Header="Attribute" Width="1.4*" SortMemberPath="AttributeName">
+                    <!--
+                        No Object class column any more. Every row belongs to the one class pair named
+                        in the two pickers directly above, so repeating it 45 times said nothing and
+                        cost the width the datatype columns are read in.
+                    -->
+                    <DataGridTemplateColumn Header="Attribute" Width="1.6*" SortMemberPath="AttributeName">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Style="{StaticResource NameCell}" Text="{Binding AttributeName}"

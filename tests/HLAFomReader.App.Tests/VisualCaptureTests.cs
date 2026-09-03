@@ -226,6 +226,9 @@ public sealed class VisualCaptureTests
                 compare.Right = compare.Sources.First(s => s.FileName.Contains("v2", StringComparison.Ordinal));
 
                 RunTask(compare.AttributeMap.ActivateAsync());
+
+                // A class on each side, or the capture is of an empty grid and an invitation.
+                AttributeMapHarness.PickSharedClass(compare.AttributeMap);
                 compare.AttributeMap.OnlyDifferences = false;
 
                 var view = new AttributeMapView { DataContext = compare.AttributeMap };
@@ -275,6 +278,9 @@ public sealed class VisualCaptureTests
 
                 var map = compare.AttributeMap;
                 RunTask(map.ActivateAsync());
+
+                // Nothing is compared until a class is chosen on each side.
+                AttributeMapHarness.PickSharedClass(map);
                 map.OnlyDifferences = false;
 
                 // Prefer a row whose type unfolds — a record beats a scalar for seeing the layout.
@@ -290,6 +296,7 @@ public sealed class VisualCaptureTests
                     compare.Sources.First(s => s.FileName.Contains("2010.xml", StringComparison.Ordinal)),
                     compare.Sources.First(s => s.FileName.Contains("v2", StringComparison.Ordinal)));
                 RunTask(inspectable.ActivateAsync());
+                AttributeMapHarness.PickSharedClass(inspectable);
 
                 inspectable.ShowLeftDataTypeCommand.Execute(
                     inspectable.Map!.Rows.First(r => r.QualifiedName == row.QualifiedName));

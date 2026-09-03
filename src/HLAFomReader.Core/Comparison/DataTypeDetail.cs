@@ -44,6 +44,28 @@ public enum DataTypeMemberRole
     Enumerator,
 }
 
+/// <summary>The wording for a member's role wherever a person sees it.</summary>
+/// <remarks>
+/// One statement of the vocabulary, because two things now show it: the datatype inspector's badge
+/// beside each node, and the Kind column of the exported side-by-side worksheet. A sheet that named
+/// a record field something other than the inspector does would be read as describing a different
+/// thing.
+/// </remarks>
+public static class DataTypeMemberRoleText
+{
+    /// <summary>The label for one role.</summary>
+    public static string Label(DataTypeMemberRole role) => role switch
+    {
+        DataTypeMemberRole.Field => "Field",
+        DataTypeMemberRole.Element => "Element",
+        DataTypeMemberRole.Representation => "Represented as",
+        DataTypeMemberRole.Discriminant => "Discriminant",
+        DataTypeMemberRole.Alternative => "Alternative",
+        DataTypeMemberRole.Enumerator => "Enumerator",
+        _ => "",
+    };
+}
+
 /// <summary>
 /// The span of values a datatype can carry, and what establishes it.
 /// </summary>

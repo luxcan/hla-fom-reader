@@ -261,8 +261,19 @@ public sealed class ViewSmokeTests
                 RunTask(attributeMap.ActivateAsync());
                 Layout(attributeMapView);
 
+                // Activating fills the two class pickers and compares nothing: the tab is
+                // class-against-class now, and which two is the user's call.
+                Assert.NotEmpty(attributeMap.ClassOptionsA);
+                Assert.NotEmpty(attributeMap.ClassOptionsB);
+                Assert.Null(attributeMap.Map);
+
+                // Customer, because the search below is about one of its attributes.
+                AttributeMapHarness.PickSharedClass(attributeMap, "Customer");
+                Layout(attributeMapView);
+
                 Assert.NotNull(attributeMap.Map);
                 Assert.NotEmpty(attributeMap.Rows);
+                Assert.True(attributeMap.ComparesBothSides);
 
                 // Inherited attributes must be mapped against the subclass, not just the declarer.
                 Assert.Contains(attributeMap.Map!.Rows, r => !string.IsNullOrWhiteSpace(r.LeftDeclaredIn));
@@ -511,9 +522,21 @@ public sealed class ViewSmokeTests
 
                 // All three, from the one press.
                 Assert.NotEmpty(compare.ClassRows);
-                Assert.NotEmpty(compare.AttributeMap.Rows);
                 Assert.NotNull(compare.StoredRows.Comparison);
                 Assert.Contains(compare.StoredRows.Tables, t => t.HasRows);
+
+                // The attribute map is ready rather than filled: Compare reads both FOMs and lists
+                // their classes, and stops there. Picking the class pair is the judgement that tab
+                // exists for, and choosing one here would present a guess as an answer.
+                Assert.NotEmpty(compare.AttributeMap.ClassOptionsA);
+                Assert.NotEmpty(compare.AttributeMap.ClassOptionsB);
+                Assert.Empty(compare.AttributeMap.Rows);
+                Assert.Contains("Pick a class in each FOM", compare.AttributeMap.EmptyMessage,
+                    StringComparison.Ordinal);
+
+                // ... and one pick is all it then takes, with both documents already in hand.
+                AttributeMapHarness.PickSharedClass(compare.AttributeMap);
+                Assert.NotEmpty(compare.AttributeMap.Rows);
 
                 Assert.False(compare.AttributeMap.IsAwaitingCompare);
                 Assert.False(compare.StoredRows.IsAwaitingCompare);

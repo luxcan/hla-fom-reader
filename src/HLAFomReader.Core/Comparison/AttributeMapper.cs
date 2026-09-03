@@ -67,6 +67,82 @@ public static class AttributeMapper
         return new Run(left, right, effective).Execute();
     }
 
+    /// <summary>
+    /// Lists one document's object classes for a class picker, each with the size of its effective
+    /// attribute set.
+    /// </summary>
+    /// <param name="document">The FOM to inventory.</param>
+    /// <param name="options">Matching knobs; strict defaults are used when null. Only
+    /// <see cref="ComparisonOptions.IgnoreManagementObjectModel"/> and the name folding affect the
+    /// result.</param>
+    /// <returns>
+    /// Every object class in the document's own tree order — root first, then depth-first through
+    /// the children — which is the order the FOM is written in and the order somebody who knows it
+    /// expects to scroll through.
+    /// </returns>
+    /// <remarks>
+    /// The counts come from the same memoised walk <see cref="Build"/> uses, so the figure beside a
+    /// class in the picker is exactly the number of rows choosing it produces. Nothing here resolves
+    /// a datatype, and the run's two resolvers are deferred, so this costs a tree walk and no more.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
+    public static IReadOnlyList<ObjectClassSummary> ListClasses(
+        FomDocument document, ComparisonOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        var effective = (options ?? new ComparisonOptions()).Clone();
+
+        // The same document on both sides: a listing needs one document's class tree and the
+        // effective-set walk, both of which Run already owns, and neither of which reads the other
+        // side. The resolvers this would otherwise build are the reason they are Lazy.
+        return new Run(document, document, effective).ListClasses(document);
+    }
+
+    /// <summary>
+    /// Maps <b>one</b> class of <paramref name="left"/> against <b>one</b> class of
+    /// <paramref name="right"/>, whatever the two are called.
+    /// </summary>
+    /// <param name="left">The A side.</param>
+    /// <param name="right">The B side.</param>
+    /// <param name="leftClassName">Qualified name of the class chosen in A, or null for none.</param>
+    /// <param name="rightClassName">Qualified name of the class chosen in B, or null for none.</param>
+    /// <param name="options">Matching knobs; strict defaults are used when null.</param>
+    /// <returns>
+    /// One row per attribute of the union of the two effective sets. With a class on one side only,
+    /// every row is <see cref="AttributeMapStatus.Unpaired"/> and carries that side alone. With
+    /// neither, the map is empty.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// This is what the Attribute data screen runs, and it is a different question from
+    /// <see cref="Build"/>. Build asks "how do these two FOMs line up?" and answers class by matched
+    /// class. This asks "if I move this class's data onto that one, what happens?" — a question about
+    /// a pairing the user made, which no name matching can discover. RPR 2.0 splits RPR 1.0's
+    /// <c>Aircraft</c> across a reworked hierarchy, and lining the old class up against the new one
+    /// is precisely the judgement the screen exists to support.
+    /// </para>
+    /// <para>
+    /// A name that matches no class resolves to null and behaves exactly like an unpicked side,
+    /// per the house rule that content problems yield a thinner result rather than an exception.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">Either document is null.</exception>
+    public static AttributeDataMap BuildForClasses(
+        FomDocument left,
+        FomDocument right,
+        string? leftClassName,
+        string? rightClassName,
+        ComparisonOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+
+        var effective = (options ?? new ComparisonOptions()).Clone();
+
+        return new Run(left, right, effective).ExecuteForClasses(leftClassName, rightClassName);
+    }
+
     /// <summary>The advisory shown for a side that carries no datatype information whatsoever.</summary>
     private static string TypelessMessage(string sideName) =>
         $"{sideName} has no datatypes (HLA 1.3 FED); register its .omt to compare encodings";
@@ -82,12 +158,14 @@ public static class AttributeMapper
     /// <summary>One attribute of a class's effective set, together with the class that declares it.</summary>
     private sealed class EffectiveAttribute
     {
-        internal EffectiveAttribute(string key, string name, string? dataType, string declaredIn)
+        internal EffectiveAttribute(
+            string key, string name, string? dataType, string declaredIn, string declaredInQualified)
         {
             Key = key;
             Name = name;
             DataType = dataType;
             DeclaredIn = declaredIn;
+            DeclaredInQualified = declaredInQualified;
         }
 
         /// <summary>Normalised name, used to line the attribute up with the other side.</summary>
@@ -101,6 +179,12 @@ public static class AttributeMapper
 
         /// <summary>Local name of the declaring class — an ancestor whenever the attribute is inherited.</summary>
         internal string DeclaredIn { get; }
+
+        /// <summary>
+        /// Dotted name of the declaring class. Kept beside the local one because two independently
+        /// chosen classes may sit in unrelated trees that both contain a <c>Platform</c>.
+        /// </summary>
+        internal string DeclaredInQualified { get; }
     }
 
     /// <summary>One build. Holds the per-class resolution cache, so it is never shared between calls.</summary>
@@ -124,13 +208,29 @@ public static class AttributeMapper
         /// building a resolver per attribute would re-walk the same records over and over. A name
         /// must be resolved against its <em>own</em> document's tables, which is why there are two.
         /// </summary>
-        private readonly DataTypeResolver _leftTypes;
+        /// <remarks>
+        /// Deferred because <see cref="ListClasses"/> uses the same run purely for its memoised
+        /// effective-attribute walk and resolves no datatype at all. Building both resolvers for a
+        /// picker inventory would read every datatype table of the document to answer a question
+        /// about class names.
+        /// </remarks>
+        private readonly Lazy<DataTypeResolver> _leftTypes;
 
         /// <summary>Datatype resolution for the B side; see <see cref="_leftTypes"/>.</summary>
-        private readonly DataTypeResolver _rightTypes;
+        private readonly Lazy<DataTypeResolver> _rightTypes;
 
         private bool _leftTypeless;
         private bool _rightTypeless;
+
+        /// <summary>
+        /// Whether a change of declaring class is worth reporting as <see cref="AttributeMapStatus.Moved"/>.
+        /// </summary>
+        /// <remarks>
+        /// True for the whole-FOM map, where both sides walk the same matched class and a different
+        /// ancestor really is a move. False for a class pair the user chose by hand: see the comment
+        /// in <see cref="MatchedRow"/>.
+        /// </remarks>
+        private bool _reportMoves = true;
 
         internal Run(FomDocument left, FomDocument right, ComparisonOptions options)
         {
@@ -138,8 +238,8 @@ public static class AttributeMapper
             _right = right;
             _o = options;
 
-            _leftTypes = new DataTypeResolver(left);
-            _rightTypes = new DataTypeResolver(right);
+            _leftTypes = new Lazy<DataTypeResolver>(() => new DataTypeResolver(left));
+            _rightTypes = new Lazy<DataTypeResolver>(() => new DataTypeResolver(right));
         }
 
         internal AttributeDataMap Execute()
@@ -184,7 +284,7 @@ public static class AttributeMapper
                 }
                 else
                 {
-                    AddOneSidedClass(rows, className, leftClass, AttributeMapStatus.OnlyInLeft);
+                    AddOneSidedClass(rows, className, leftClass, AttributeMapStatus.OnlyInLeft, onLeft: true);
                 }
             }
 
@@ -193,7 +293,7 @@ public static class AttributeMapper
             foreach (var rightClass in rightClasses)
             {
                 if (matchedRight.Contains(rightClass)) continue;
-                AddOneSidedClass(rows, RawClassKey(rightClass), rightClass, AttributeMapStatus.OnlyInRight);
+                AddOneSidedClass(rows, RawClassKey(rightClass), rightClass, AttributeMapStatus.OnlyInRight, onLeft: false);
             }
 
             var map = new AttributeDataMap
@@ -215,6 +315,116 @@ public static class AttributeMapper
                 map.Advisories.Add(RenameMessage(map.RenamedCount, map.DataTypeChangedCount));
 
             return map;
+        }
+
+        /// <summary>Backs <see cref="AttributeMapper.ListClasses"/>.</summary>
+        internal IReadOnlyList<ObjectClassSummary> ListClasses(FomDocument document)
+        {
+            var classes = ClassesInTreeOrder(document);
+            var summaries = new List<ObjectClassSummary>(classes.Count);
+
+            foreach (var objectClass in classes)
+            {
+                var name = RawClassKey(objectClass);
+
+                // A class with no name is the mark of a partial parse. It could never be picked,
+                // and an unnamed entry in the drop-down is unreachable by typing.
+                if (name.Length == 0) continue;
+
+                summaries.Add(new ObjectClassSummary(name, Resolve(objectClass).Count));
+            }
+
+            return summaries;
+        }
+
+        /// <summary>Backs <see cref="AttributeMapper.BuildForClasses"/>.</summary>
+        internal AttributeDataMap ExecuteForClasses(string? leftClassName, string? rightClassName)
+        {
+            var leftClasses = ClassesInTreeOrder(_left);
+            var rightClasses = ClassesInTreeOrder(_right);
+
+            // Whether a side carries datatypes at all stays a property of the whole document rather
+            // than of the chosen class: a FED has no datatype table anywhere, and saying so from one
+            // class's attributes would depend on which class the user happened to pick.
+            _leftTypeless = IsTypeless(leftClasses);
+            _rightTypeless = IsTypeless(rightClasses);
+
+            var leftClass = FindClass(leftClasses, leftClassName);
+            var rightClass = FindClass(rightClasses, rightClassName);
+
+            var rows = new List<AttributeMapRow>();
+
+            if (leftClass is not null && rightClass is not null)
+            {
+                // The two classes were chosen by hand, so a different declaring ancestor on each
+                // side is the pairing itself rather than a move. See MatchedRow.
+                _reportMoves = SameClass(leftClass, rightClass);
+
+                // A's spelling leads for a matched pair, as it does on the whole-FOM map; the two
+                // qualified names are carried on the map itself, where they can say which is which.
+                AddMatchedClass(rows, RawClassKey(leftClass), leftClass, rightClass, TypelessNote());
+            }
+            else if (leftClass is not null)
+            {
+                AddOneSidedClass(
+                    rows, RawClassKey(leftClass), leftClass, AttributeMapStatus.Unpaired, onLeft: true);
+            }
+            else if (rightClass is not null)
+            {
+                AddOneSidedClass(
+                    rows, RawClassKey(rightClass), rightClass, AttributeMapStatus.Unpaired, onLeft: false);
+            }
+
+            var map = new AttributeDataMap
+            {
+                Rows = rows,
+                LeftLabel = Label(_left, LeftSideName),
+                RightLabel = Label(_right, RightSideName),
+
+                // The name as the document spells it, not as the caller typed it: the two are the
+                // same string today, but the map is read back by the export and the headline, and
+                // echoing the caller would let a differently cased request rename the class on screen.
+                LeftClassName = leftClass is null ? null : RawClassKey(leftClass),
+                RightClassName = rightClass is null ? null : RawClassKey(rightClass),
+            };
+
+            if (_leftTypeless) map.Advisories.Add(TypelessMessage(LeftSideName));
+            if (_rightTypeless) map.Advisories.Add(TypelessMessage(RightSideName));
+
+            if (map.RenamedCount > 0)
+                map.Advisories.Add(RenameMessage(map.RenamedCount, map.DataTypeChangedCount));
+
+            return map;
+        }
+
+        /// <summary>
+        /// The class a picker's qualified name names, or null when nothing is chosen or nothing
+        /// matches. Folded through the same normalisation the rest of the matching uses, so a
+        /// dialect spelling of the root does not lose the class.
+        /// </summary>
+        private FomObjectClass? FindClass(List<FomObjectClass> classes, string? qualifiedName)
+        {
+            if (string.IsNullOrWhiteSpace(qualifiedName)) return null;
+
+            var wanted = OmtNormalizer.NormalizeQualifiedName(qualifiedName.Trim(), _o)?.Trim();
+            if (string.IsNullOrEmpty(wanted)) return null;
+
+            foreach (var objectClass in classes)
+            {
+                var key = ClassKey(objectClass);
+                if (key.Length != 0 && string.Equals(key, wanted, _o.NameComparison)) return objectClass;
+            }
+
+            return null;
+        }
+
+        /// <summary>True when both sides picked what is, after folding, the same class.</summary>
+        private bool SameClass(FomObjectClass left, FomObjectClass right)
+        {
+            var a = ClassKey(left);
+            var b = ClassKey(right);
+
+            return a.Length != 0 && b.Length != 0 && string.Equals(a, b, _o.NameComparison);
         }
 
         // ------------------------------------------------------------------------- rows
@@ -244,7 +454,7 @@ public static class AttributeMapper
                 }
                 else
                 {
-                    rows.Add(OneSidedRow(className, item, AttributeMapStatus.OnlyInLeft));
+                    rows.Add(OneSidedRow(className, item, AttributeMapStatus.OnlyInLeft, onLeft: true));
                 }
             }
 
@@ -253,7 +463,7 @@ public static class AttributeMapper
             foreach (var item in rightItems)
             {
                 if (matched.Contains(item.Key)) continue;
-                rows.Add(OneSidedRow(className, item, AttributeMapStatus.OnlyInRight));
+                rows.Add(OneSidedRow(className, item, AttributeMapStatus.OnlyInRight, onLeft: false));
             }
         }
 
@@ -266,10 +476,11 @@ public static class AttributeMapper
             List<AttributeMapRow> rows,
             string className,
             FomObjectClass objectClass,
-            AttributeMapStatus status)
+            AttributeMapStatus status,
+            bool onLeft)
         {
             foreach (var item in Resolve(objectClass))
-                rows.Add(OneSidedRow(className, item, status));
+                rows.Add(OneSidedRow(className, item, status, onLeft));
         }
 
         private AttributeMapRow MatchedRow(
@@ -284,12 +495,17 @@ public static class AttributeMapper
             // Resolved even when the classification will not need it: the encoding columns are the
             // reader's evidence, and an unresolved "?(Foo)" showing there is itself the answer to
             // "why is this row still flagged when the two names look interchangeable?".
-            var leftSignature = leftType is null ? null : _leftTypes.Resolve(left.DataType);
-            var rightSignature = rightType is null ? null : _rightTypes.Resolve(right.DataType);
+            var leftSignature = leftType is null ? null : _leftTypes.Value.Resolve(left.DataType);
+            var rightSignature = rightType is null ? null : _rightTypes.Value.Resolve(right.DataType);
 
             // The attribute is still on the class either way — inheritance sees to that — so a change
             // of declaring class is context for the reader rather than work for them.
-            var moved = !SameDeclaringClass(left.DeclaredIn, right.DeclaredIn);
+            //
+            // Only ever reported when the two sides are looking at the same class. Once the user
+            // picks Aircraft against FixedWingAircraft, the two attributes are necessarily declared
+            // on different ancestors of two different trees, so every single row would come back
+            // "Moved" — restating the pairing the user made themselves as though it were a finding.
+            var moved = _reportMoves && !SameDeclaringClass(left.DeclaredIn, right.DeclaredIn);
 
             AttributeMapStatus status;
             var rowNote = note;
@@ -305,7 +521,15 @@ public static class AttributeMapper
             }
             else if (SameText(leftType, rightType))
             {
-                status = moved ? AttributeMapStatus.Moved : AttributeMapStatus.Same;
+                // The same spelling is not the same type. Each side's name is resolved through its
+                // OWN document's tables, so two FOMs can both declare a WorldLocationStruct whose
+                // fields differ — a generation keeping a struct's name and changing its contents is
+                // the silent-corruption case a remap most needs to be told about, and reporting
+                // Same on the name alone is exactly how it stays silent. It would also contradict
+                // the two encoding columns sitting beside the verdict.
+                status = ReEncodes(leftSignature, rightSignature)
+                    ? AttributeMapStatus.DataTypeChanged
+                    : moved ? AttributeMapStatus.Moved : AttributeMapStatus.Same;
             }
             else if (leftSignature is not null && leftSignature.EncodesTheSameAs(rightSignature))
             {
@@ -330,10 +554,19 @@ public static class AttributeMapper
             {
                 ClassName = className,
                 AttributeName = left.Name,
+
+                // Only when the spellings genuinely differ. The two sides matched on a normalised
+                // key, which folds privilegeToDelete onto HLAprivilegeToDeleteObject, and the
+                // side-by-side sheet has to be able to print both names.
+                RightAttributeName =
+                    string.Equals(left.Name, right.Name, StringComparison.Ordinal) ? null : right.Name,
+
                 LeftDeclaredIn = left.DeclaredIn,
+                LeftDeclaredInQualified = left.DeclaredInQualified,
                 LeftDataType = leftType,
                 LeftEncoding = leftSignature?.Canonical,
                 RightDeclaredIn = right.DeclaredIn,
+                RightDeclaredInQualified = right.DeclaredInQualified,
                 RightDataType = rightType,
                 RightEncoding = rightSignature?.Canonical,
                 Status = status,
@@ -341,30 +574,60 @@ public static class AttributeMapper
             };
         }
 
-        private AttributeMapRow OneSidedRow(string className, EffectiveAttribute item, AttributeMapStatus status)
+        /// <summary>
+        /// A row carrying one side only.
+        /// </summary>
+        /// <param name="onLeft">
+        /// Which side's columns to fill. Passed rather than derived from
+        /// <paramref name="status"/>, because <see cref="AttributeMapStatus.Unpaired"/> says nothing
+        /// about which side the attribute came from — only that the other one has no class chosen.
+        /// </param>
+        private AttributeMapRow OneSidedRow(
+            string className, EffectiveAttribute item, AttributeMapStatus status, bool onLeft)
         {
             var dataType = OmtNormalizer.NormalizeText(item.DataType, _o);
-            var onLeft = status == AttributeMapStatus.OnlyInLeft;
 
             // A one-sided row has nothing to compare against, but its encoding is still worth
             // showing: it is what a reader needs in order to choose the attribute on the other side
             // that this data could be moved onto.
             var encoding = dataType is null
                 ? null
-                : (onLeft ? _leftTypes : _rightTypes).Resolve(item.DataType).Canonical;
+                : (onLeft ? _leftTypes.Value : _rightTypes.Value).Resolve(item.DataType).Canonical;
 
             return new AttributeMapRow
             {
                 ClassName = className,
                 AttributeName = item.Name,
                 LeftDeclaredIn = onLeft ? item.DeclaredIn : null,
+                LeftDeclaredInQualified = onLeft ? item.DeclaredInQualified : null,
                 LeftDataType = onLeft ? dataType : null,
                 LeftEncoding = onLeft ? encoding : null,
                 RightDeclaredIn = onLeft ? null : item.DeclaredIn,
+                RightDeclaredInQualified = onLeft ? null : item.DeclaredInQualified,
                 RightDataType = onLeft ? null : dataType,
                 RightEncoding = onLeft ? null : encoding,
                 Status = status,
             };
+        }
+
+        /// <summary>
+        /// True when both sides resolved and resolved to different encodings — the row moves
+        /// different bytes.
+        /// </summary>
+        /// <remarks>
+        /// A side that could not be resolved is evidence of nothing: it neither proves the encoding
+        /// changed nor proves it held. So an unresolved name answers false here and the row keeps
+        /// whatever its names said, rather than being flagged on a resolution that never happened.
+        /// This is <see cref="AttributeMapRow.EncodingDiffers"/>'s reasoning, applied while the row
+        /// is still being classified. Note that <see cref="DataTypeSignature.EncodesTheSameAs"/>
+        /// cannot be negated to get this: it answers false for an unresolved side too.
+        /// </remarks>
+        private static bool ReEncodes(DataTypeSignature? left, DataTypeSignature? right)
+        {
+            if (left is null || right is null) return false;
+            if (!left.IsResolved || !right.IsResolved) return false;
+
+            return !string.Equals(left.Canonical, right.Canonical, StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -431,7 +694,8 @@ public static class AttributeMapper
                     if (key.Length == 0) continue;
                     if (!seen.Add(key)) continue;
 
-                    items.Add(new EffectiveAttribute(key, RawName(attribute), attribute.DataType, RawName(owner)));
+                    items.Add(new EffectiveAttribute(
+                        key, RawName(attribute), attribute.DataType, RawName(owner), RawClassKey(owner)));
                 }
 
                 resolved = items;

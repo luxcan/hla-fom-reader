@@ -443,7 +443,7 @@ public sealed class CompareViewModel : ViewModelBase
                 // nothing for the rest of it is the reason this looked like a hang: the user cannot
                 // tell a long job from a dead one. Each stage names itself and quotes what the stage
                 // before it found, so the wait reads as progress rather than as a stall.
-                BusyMessage = $"{StatusMessage} · mapping attribute data…";
+                BusyMessage = $"{StatusMessage} · reading object classes…";
 
                 // Land on the attribute map. It is the view this screen exists for — what data each
                 // class carries and how it is encoded on both sides — so a fresh comparison should
@@ -463,11 +463,12 @@ public sealed class CompareViewModel : ViewModelBase
                 // tab. Which tab is showing is not the database's business.
                 await AttributeMap.ActivateAsync(showBusy: false).ConfigureAwait(true);
 
-                // The map's own headline, if it built one. This is the figure the screen is actually
-                // for — how many attributes need remapping — and quoting it here means the user has
-                // read it before the overlay lifts, not only after.
+                // The tab's own headline. It now reports what is ready rather than what was found:
+                // the attribute map is a comparison of two classes the user chooses, and picking
+                // them for them would present a guess as an answer. What Compare guarantees is that
+                // both FOMs are read and both pickers are filled by the time the overlay lifts.
                 var mapped = string.IsNullOrEmpty(AttributeMap.StatusMessage)
-                    ? "Mapped attribute data"
+                    ? "Listed the object classes on both sides"
                     : AttributeMap.StatusMessage!;
 
                 BusyMessage = $"{mapped} · reading stored rows…";

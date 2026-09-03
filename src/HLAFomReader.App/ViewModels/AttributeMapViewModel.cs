@@ -1,64 +1,63 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Data;
 using HLAFomReader.App.Infrastructure;
 using HLAFomReader.Core.Comparison;
+using HLAFomReader.Core.Model;
 using HLAFomReader.Core.Registry;
+using HLAFomReader.Core.Reporting;
 
 namespace HLAFomReader.App.ViewModels;
 
 /// <summary>
-/// One entry in the object-class picker: a class the map carries rows for, or the "All classes"
-/// sentinel that turns the scope off.
+/// One entry in a class picker: an object class of one FOM, with the size of its effective
+/// attribute set.
 /// </summary>
 /// <remarks>
 /// The leaf name is held apart from the path it sits under because the picker is used by typing.
 /// Every class in a FOM is named <c>ObjectRoot.something.something.Aircraft</c>, so a list showing
-/// qualified names is a list of identical prefixes: type-to-select would match "ObjectRoot" on the
-/// first keystroke and never reach the name the user has in mind. The leaf leads, and the path
-/// follows it as quiet context for the two classes that share a leaf name.
+/// qualified names is a list of identical prefixes: filtering on the whole name would match every
+/// class in the FOM on the first keystroke and never narrow. The leaf leads, and the path follows
+/// it as quiet context for the two classes that share a leaf name.
 /// </remarks>
 public sealed class ObjectClassOption
 {
-    /// <summary>Wording for the sentinel, used in the list and by the clear command.</summary>
-    public const string AllClassesLabel = "All classes";
-
-    private ObjectClassOption(string qualifiedName, string leafName, string? path, int rowCount, bool isAll)
+    private ObjectClassOption(string qualifiedName, string leafName, string? path, int attributeCount)
     {
         QualifiedName = qualifiedName;
         LeafName = leafName;
         Path = path;
-        RowCount = rowCount;
-        IsAll = isAll;
+        AttributeCount = attributeCount;
     }
 
-    /// <summary>The fully qualified dotted name, or <c>""</c> for the "all classes" sentinel.</summary>
+    /// <summary>The fully qualified dotted name.</summary>
     public string QualifiedName { get; }
 
-    /// <summary>The segment after the last dot — "Aircraft" — or the sentinel's wording.</summary>
+    /// <summary>The segment after the last dot — "Aircraft".</summary>
     public string LeafName { get; }
 
     /// <summary>Everything before the last dot, or null when there is nothing above the leaf.</summary>
     public string? Path { get; }
 
-    /// <summary>How many attribute rows this class contributes; the whole map, for the sentinel.</summary>
-    public int RowCount { get; }
-
-    /// <summary>True for the sentinel that scopes to nothing.</summary>
-    public bool IsAll { get; }
-
-    /// <summary>The sentinel, carrying the total row count so the list reads as a breakdown.</summary>
-    public static ObjectClassOption All(int totalRows) =>
-        new("", AllClassesLabel, null, totalRows, isAll: true);
+    /// <summary>
+    /// How many attributes the class effectively carries — declared plus everything inherited.
+    /// </summary>
+    /// <remarks>
+    /// Counted by the mapper, so it is exactly the number of rows picking this class produces. RPR's
+    /// <c>Aircraft</c> declares zero attributes and inherits forty-five; a declared count would
+    /// advertise it as empty.
+    /// </remarks>
+    public int AttributeCount { get; }
 
     /// <summary>Splits a qualified class name into the leaf the user types and the path behind it.</summary>
-    public static ObjectClassOption ForClass(string qualifiedName, int rowCount)
+    public static ObjectClassOption ForClass(ObjectClassSummary summary)
     {
-        var name = qualifiedName;
+        var name = summary.QualifiedName;
         var lastDot = name.LastIndexOf('.');
 
         // A trailing dot or a bare root name leaves nothing to split, and a leaf is required — a
@@ -66,16 +65,35 @@ public sealed class ObjectClassOption
         var leaf = lastDot >= 0 && lastDot < name.Length - 1 ? name[(lastDot + 1)..] : name;
         var path = lastDot > 0 && lastDot < name.Length - 1 ? name[..lastDot] : null;
 
-        return new ObjectClassOption(name, leaf, path, rowCount, isAll: false);
+        return new ObjectClassOption(name, leaf, path, summary.AttributeCount);
     }
 
-    /// <summary>Type-to-select and the collapsed field both fall back to this.</summary>
+    /// <summary>
+    /// True when the typed text appears anywhere in the leaf name or the path.
+    /// </summary>
+    /// <remarks>
+    /// Substring rather than prefix, which is the whole point of filtering the list instead of
+    /// leaning on WPF's built-in type-to-select: on a real FOM the class somebody wants is
+    /// <c>ObjectRoot.BaseEntity.PhysicalEntity.Platform.Aircraft</c>, and typing "air" has to reach
+    /// it. The path is searchable too, so "Platform" gathers the branch.
+    /// </remarks>
+    public bool Matches(string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter)) return true;
+
+        var needle = filter.Trim();
+
+        return LeafName.Contains(needle, StringComparison.OrdinalIgnoreCase)
+            || (Path?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    /// <summary>What the collapsed picker shows once a class is chosen.</summary>
     public override string ToString() => LeafName;
 }
 
 /// <summary>
-/// The "Attribute data" tab of the Compare screen: one flat row per attribute a federate could
-/// publish or reflect, with the datatype on each side beside it.
+/// The "Attribute data" tab of the Compare screen: one class chosen in each FOM, and one flat row
+/// per attribute they carry, with the datatype on each side beside it.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -85,10 +103,18 @@ public sealed class ObjectClassOption
 /// names are properties of the model rather than of the data, and are deliberately absent.
 /// </para>
 /// <para>
-/// The rows come from <see cref="AttributeMapper"/>, which resolves each class to its
-/// <b>effective</b> attribute set — declared plus everything inherited from its ancestors. A class
-/// that declares nothing still publishes its ancestors' attributes, so the declared set would report
-/// most of a deep FOM as empty.
+/// The two classes are chosen <b>independently</b>, and that is the point. Matching classes by name
+/// answers "how do these two FOMs line up?", which the difference tree already does. The question
+/// here is "if I move this class's data onto that one, what happens?" — and across a generational
+/// step the counterpart is rarely the same name. RPR 2.0 reworks the hierarchy RPR 1.0 declared, so
+/// deciding that its <c>Aircraft</c> is what the old class becomes is a judgement only the user can
+/// make. The screen exists to let them make it and then read the consequences.
+/// </para>
+/// <para>
+/// The rows come from <see cref="AttributeMapper.BuildForClasses"/>, which resolves each class to
+/// its <b>effective</b> attribute set — declared plus everything inherited from its ancestors. A
+/// class that declares nothing still publishes its ancestors' attributes, so the declared set would
+/// report most of a deep FOM as empty.
 /// </para>
 /// <para>
 /// Beside each datatype name is the encoding it resolves to through that FOM's own datatype tables.
@@ -110,19 +136,28 @@ public sealed class AttributeMapViewModel : ViewModelBase
     private string _leftLabel = DefaultLeftLabel;
     private string _rightLabel = DefaultRightLabel;
 
+    // Both documents, held for the lifetime of the pair. Reading one out of SQLite is the expensive
+    // part of this screen, and the user is about to compare many pairs of classes out of the same
+    // two documents: reloading per pick would turn a few milliseconds of work into a few hundred.
+    private FomDocument? _leftDocument;
+    private FomDocument? _rightDocument;
+
     private AttributeDataMap? _map;
     private AttributeMapRow? _selectedRow;
 
-    // Kept from the last rebuild so clicking an encoding cell answers instantly. A resolver holds
-    // only the document's datatype tables, not its class tree, so this is a fraction of the cost of
-    // reloading the document — and reloading two documents on a click would stall the UI thread for
-    // exactly as long as the IsActive gate exists to avoid. See ShowEncoding.
+    // Kept from the pair load so clicking an encoding cell answers instantly. A resolver holds only
+    // the document's datatype tables, not its class tree, so this is a fraction of the cost of
+    // reloading the document. See ShowEncoding.
     private DataTypeResolver? _leftResolver;
     private DataTypeResolver? _rightResolver;
-    private ObjectClassOption? _selectedObjectClass;
 
-    // Defaults OFF: the map is read as a whole worksheet — you look up a class and see
-    // everything it carries, changed or not — rather than as a filtered to-do list.
+    private ObjectClassOption? _selectedClassA;
+    private ObjectClassOption? _selectedClassB;
+    private string _classFilterA = "";
+    private string _classFilterB = "";
+
+    // Defaults OFF: the map is read as a whole worksheet — you look up a class pair and see
+    // everything they carry, changed or not — rather than as a filtered to-do list.
     private bool _onlyDifferences;
     private string _searchText = "";
 
@@ -139,8 +174,16 @@ public sealed class AttributeMapViewModel : ViewModelBase
     private bool _isActive;
     private bool _isStale = true;
 
-    // Bumped by each rebuild and re-checked when that rebuild's worker returns. See RebuildAsync.
+    // Bumped by each pair load and re-checked when that load's worker returns. See LoadPairAsync.
     private int _generation;
+
+    // The same guard for comparisons, which are far more frequent: one per keystroke-free pick.
+    private int _compareGeneration;
+
+    // Comparisons are chained rather than run concurrently. Arrowing down a picker fires one per
+    // class, and serialising them means at most one repaint lands: every superseded compare in the
+    // queue fails its generation check the moment it is reached and costs nothing.
+    private Task _compareChain = Task.CompletedTask;
 
     /// <summary>Creates the screen. Nothing is read until a pair is set and the tab is shown.</summary>
     /// <param name="repository">Store both FOM documents are rebuilt from.</param>
@@ -150,10 +193,18 @@ public sealed class AttributeMapViewModel : ViewModelBase
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
 
+        // One view per side, and never the default view of the collection: a default view is shared
+        // by everything that binds the same collection, so B's filter would narrow A's picker.
+        ClassesA = new ListCollectionView(ClassOptionsA) { Filter = PassesA };
+        ClassesB = new ListCollectionView(ClassOptionsB) { Filter = PassesB };
+
         RefreshCommand = new RelayCommand(Refresh);
         ClearSearchCommand = new RelayCommand(() => SearchText = "");
-        ClearClassScopeCommand = new RelayCommand(ClearClassScope, () => IsClassScoped);
-        ExportCsvCommand = new RelayCommand(ExportCsv, () => Map is not null && Rows.Count > 0);
+
+        ClearClassACommand = new RelayCommand(() => SelectedClassA = null, () => SelectedClassA is not null);
+        ClearClassBCommand = new RelayCommand(() => SelectedClassB = null, () => SelectedClassB is not null);
+
+        ExportCommand = new RelayCommand(ExportWorkbook, () => Map is not null && Rows.Count > 0);
 
         ShowLeftDataTypeCommand = new RelayCommand<AttributeMapRow>(
             row => ShowDataType(row, left: true), row => CanShowDataType(row, left: true));
@@ -166,16 +217,36 @@ public sealed class AttributeMapViewModel : ViewModelBase
     public ObservableCollection<AttributeMapRow> Rows { get; } = new();
 
     /// <summary>
-    /// The picker's contents: the "All classes" sentinel, then every class the map carries rows for.
+    /// Every object class of FOM A, in that document's own tree order.
     /// </summary>
     /// <remarks>
-    /// Deliberately left in the mapper's own order rather than sorted. The mapper emits the left
-    /// document's class tree, root first, which is the order the FOM itself is written in and the
-    /// order somebody who knows the FOM expects to scroll through. Sorting alphabetically would put
-    /// <c>Aircraft</c> beside <c>AmphibiousVehicle</c> and tear the hierarchy apart; typing into the
+    /// Deliberately left in the document's own order rather than sorted. Root first and then
+    /// depth-first through the children is the order the FOM itself is written in and the order
+    /// somebody who knows it expects to scroll through; sorting alphabetically would put
+    /// <c>Aircraft</c> beside <c>AmphibiousVehicle</c> and tear the hierarchy apart. Typing into the
     /// picker is what finds one class quickly, not the ordering.
     /// </remarks>
-    public ObservableCollection<ObjectClassOption> ObjectClasses { get; } = new();
+    public ObservableCollection<ObjectClassOption> ClassOptionsA { get; } = new();
+
+    /// <summary>Every object class of FOM B; see <see cref="ClassOptionsA"/>.</summary>
+    public ObservableCollection<ObjectClassOption> ClassOptionsB { get; } = new();
+
+    /// <summary>
+    /// What FOM A's picker actually shows: <see cref="ClassOptionsA"/> narrowed by what the user has
+    /// typed into it.
+    /// </summary>
+    /// <remarks>
+    /// A filtered view rather than a rebuilt list, and the difference matters. Rebuilding empties the
+    /// collection for an instant, and WPF's Selector drops <c>SelectedItem</c> the moment the
+    /// selected item leaves the items collection — which makes the ComboBox rewrite its own text box
+    /// from a now-null selection and wipe the half-typed word out from under the user. A view's
+    /// predicate is under our control instead, and it always admits the current selection, so the
+    /// selection can never leave and the text is never rewritten.
+    /// </remarks>
+    public ICollectionView ClassesA { get; }
+
+    /// <summary>What FOM B's picker shows; see <see cref="ClassesA"/>.</summary>
+    public ICollectionView ClassesB { get; }
 
     /// <summary>Fidelity notes from the mapper, e.g. one side being a FED with no datatype table.</summary>
     public ObservableCollection<string> Advisories { get; } = new();
@@ -187,17 +258,20 @@ public sealed class AttributeMapViewModel : ViewModelBase
     /// </summary>
     public ComparisonOptions Options { get; } = new();
 
-    /// <summary>Rebuilds the map from the two documents currently selected.</summary>
+    /// <summary>Re-reads both FOMs and rebuilds the two class lists.</summary>
     public RelayCommand RefreshCommand { get; }
 
     /// <summary>Empties <see cref="SearchText"/>.</summary>
     public RelayCommand ClearSearchCommand { get; }
 
-    /// <summary>Widens the picker back to "All classes". Disabled while nothing is scoped.</summary>
-    public RelayCommand ClearClassScopeCommand { get; }
+    /// <summary>Unpicks FOM A's class. Disabled while nothing is picked there.</summary>
+    public RelayCommand ClearClassACommand { get; }
 
-    /// <summary>Writes the visible rows out as the remap worksheet.</summary>
-    public RelayCommand ExportCsvCommand { get; }
+    /// <summary>Unpicks FOM B's class.</summary>
+    public RelayCommand ClearClassBCommand { get; }
+
+    /// <summary>Writes the visible rows out as the leveled remap worksheet.</summary>
+    public RelayCommand ExportCommand { get; }
 
     /// <summary>Opens the datatype inspector for a row's FOM A datatype.</summary>
     public RelayCommand<AttributeMapRow> ShowLeftDataTypeCommand { get; }
@@ -206,7 +280,7 @@ public sealed class AttributeMapViewModel : ViewModelBase
     public RelayCommand<AttributeMapRow> ShowRightDataTypeCommand { get; }
 
     /// <summary>
-    /// The map rebuild currently in flight, or a completed task when the screen is idle.
+    /// The work currently in flight, or a completed task when the screen is idle.
     /// </summary>
     /// <remarks>
     /// The entry points below are property setters and void callbacks, so they cannot hand their
@@ -216,7 +290,7 @@ public sealed class AttributeMapViewModel : ViewModelBase
     /// </remarks>
     public Task PendingWork { get; private set; } = Task.CompletedTask;
 
-    /// <summary>The whole map, unfiltered; null until a pair has been read successfully.</summary>
+    /// <summary>The current comparison; null until a class has been picked on at least one side.</summary>
     public AttributeDataMap? Map
     {
         get => _map;
@@ -225,8 +299,8 @@ public sealed class AttributeMapViewModel : ViewModelBase
             if (!SetProperty(ref _map, value)) return;
             OnPropertyChanged(nameof(Summary), nameof(SameCount), nameof(ChangedCount),
                 nameof(RenamedCount), nameof(SameOrRenamedCount), nameof(MovedCount), nameof(OnlyLeftCount),
-                nameof(OnlyRightCount));
-            ExportCsvCommand.RaiseCanExecuteChanged();
+                nameof(OnlyRightCount), nameof(ComparesBothSides));
+            ExportCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -238,37 +312,92 @@ public sealed class AttributeMapViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// The class the grid is scoped to, or the "All classes" sentinel. Null only before a map exists.
+    /// The class chosen in FOM A, or null while none is. This and its B counterpart are the screen's
+    /// primary controls.
     /// </summary>
     /// <remarks>
-    /// This is the screen's primary control. On the user's real pair the map is 1690 rows across a
-    /// couple of hundred classes, and the question being asked is almost always about one of them —
-    /// "what changed for Aircraft?" — which the free-text box can only approximate: searching
-    /// "Aircraft" also matches every class whose name contains it and every attribute that mentions
-    /// it. Picking the class answers exactly, and the list doubles as the inventory of what the two
-    /// FOMs contain.
+    /// Setting either side compares immediately. On the user's real pair each FOM holds a couple of
+    /// hundred classes and the question is always about one of them, so choosing is the whole
+    /// interaction; there is deliberately no Compare button here to press afterwards.
     /// </remarks>
-    public ObjectClassOption? SelectedObjectClass
+    public ObjectClassOption? SelectedClassA
     {
-        get => _selectedObjectClass;
+        get => _selectedClassA;
         set
         {
-            if (!SetProperty(ref _selectedObjectClass, value)) return;
+            if (!SetProperty(ref _selectedClassA, value)) return;
 
-            OnPropertyChanged(nameof(IsClassScoped), nameof(Summary));
-            ClearClassScopeCommand.RaiseCanExecuteChanged();
-            ApplyFilter();
+            // The predicate admits the current selection, so the view has to be told the selection
+            // moved or the previously chosen class stays pinned into a filtered list.
+            ClassesA.Refresh();
+
+            OnPropertyChanged(nameof(HasClassA), nameof(Summary));
+            ClearClassACommand.RaiseCanExecuteChanged();
+            ScheduleCompare();
         }
     }
 
-    /// <summary>True while the grid is narrowed to a single class.</summary>
-    public bool IsClassScoped => _selectedObjectClass is { IsAll: false };
+    /// <summary>The class chosen in FOM B; see <see cref="SelectedClassA"/>.</summary>
+    public ObjectClassOption? SelectedClassB
+    {
+        get => _selectedClassB;
+        set
+        {
+            if (!SetProperty(ref _selectedClassB, value)) return;
+
+            ClassesB.Refresh();
+
+            OnPropertyChanged(nameof(HasClassB), nameof(Summary));
+            ClearClassBCommand.RaiseCanExecuteChanged();
+            ScheduleCompare();
+        }
+    }
+
+    /// <summary>What the user has typed into FOM A's picker. Narrows the list; never picks anything.</summary>
+    /// <remarks>
+    /// Deliberately <b>not</b> bound to the ComboBox's Text. That property is written by the control
+    /// itself as well as by the user — it echoes the chosen class's name on every selection, and an
+    /// editable ComboBox commits a selection on each arrow key while its list is open. Bound, those
+    /// echoes arrive here as filters, and a user who typed "airc" to narrow two hundred classes to
+    /// three would see the list snap back to all two hundred on the first press of Down. So the view
+    /// pushes here only from real keystrokes; see AttributeMapView.xaml.cs.
+    ///
+    /// Typing must not move the selection either: a filter that selected its first match would fire
+    /// a comparison on every keystroke.
+    /// </remarks>
+    public string ClassFilterA
+    {
+        get => _classFilterA;
+        set
+        {
+            if (!SetProperty(ref _classFilterA, value ?? "")) return;
+            ClassesA.Refresh();
+        }
+    }
+
+    /// <summary>What the user has typed into FOM B's picker; see <see cref="ClassFilterA"/>.</summary>
+    public string ClassFilterB
+    {
+        get => _classFilterB;
+        set
+        {
+            if (!SetProperty(ref _classFilterB, value ?? "")) return;
+            ClassesB.Refresh();
+        }
+    }
+
+    /// <summary>True once a class is chosen in FOM A.</summary>
+    public bool HasClassA => _selectedClassA is not null;
+
+    /// <summary>True once a class is chosen in FOM B.</summary>
+    public bool HasClassB => _selectedClassB is not null;
+
+    /// <summary>True when both sides have a class, so the rows are a real comparison.</summary>
+    public bool ComparesBothSides => Map?.ComparesBothSides ?? false;
 
     /// <summary>
     /// Hides every row that needs no decision — attributes that line up with the same datatype, and
-    /// attributes whose datatype was only renamed. Defaults to true: on a real FOM pair the
-    /// overwhelming majority of rows are untouched, and the point of this screen is the handful that
-    /// need a decision.
+    /// attributes whose datatype was only renamed.
     /// </summary>
     /// <remarks>
     /// A rename is excluded here for the same reason a match is. On the user's RPR 1.0 to RPR 2.0
@@ -294,7 +423,7 @@ public sealed class AttributeMapViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Free-text filter over the class name, the attribute name and either datatype.</summary>
+    /// <summary>Free-text filter over the attribute name and either datatype.</summary>
     public string SearchText
     {
         get => _searchText;
@@ -326,7 +455,6 @@ public sealed class AttributeMapViewModel : ViewModelBase
     /// <summary>Everything that needs no conversion — the count behind the single "Same" chip.</summary>
     public int SameOrRenamedCount => SameCount + RenamedCount;
 
-
     /// <summary>Show attributes present on both sides but typed differently.</summary>
     public bool ShowChanged
     {
@@ -356,7 +484,14 @@ public sealed class AttributeMapViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Show attributes that only moved to another class in the hierarchy.</summary>
+    /// <summary>
+    /// Show attributes that only moved to another class in the hierarchy.
+    /// </summary>
+    /// <remarks>
+    /// Only ever populated when both sides picked the same class. Across two classes the user paired
+    /// by hand, a different declaring ancestor is the pairing rather than a finding, and the mapper
+    /// does not report one.
+    /// </remarks>
     public bool ShowMoved
     {
         get => _showMoved;
@@ -367,7 +502,7 @@ public sealed class AttributeMapViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Show attributes that exist in FOM A only.</summary>
+    /// <summary>Show attributes that exist in FOM A's class only.</summary>
     public bool ShowOnlyLeft
     {
         get => _showOnlyLeft;
@@ -378,7 +513,7 @@ public sealed class AttributeMapViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Show attributes that exist in FOM B only.</summary>
+    /// <summary>Show attributes that exist in FOM B's class only.</summary>
     public bool ShowOnlyRight
     {
         get => _showOnlyRight;
@@ -415,10 +550,10 @@ public sealed class AttributeMapViewModel : ViewModelBase
     /// <summary>Attributes declared on a different class, but still inherited and identically typed.</summary>
     public int MovedCount => Map?.MovedCount ?? 0;
 
-    /// <summary>Attributes only FOM A has.</summary>
+    /// <summary>Attributes only FOM A's class has.</summary>
     public int OnlyLeftCount => Map?.OnlyInLeftCount ?? 0;
 
-    /// <summary>Attributes only FOM B has.</summary>
+    /// <summary>Attributes only FOM B's class has.</summary>
     public int OnlyRightCount => Map?.OnlyInRightCount ?? 0;
 
     /// <summary>True once the parent has handed over both FOMs.</summary>
@@ -427,26 +562,26 @@ public sealed class AttributeMapViewModel : ViewModelBase
     /// <summary>True when the grid has at least one row after filtering.</summary>
     public bool HasRows => Rows.Count > 0;
 
-    /// <summary>True before this pair has been mapped — the tab is empty because nothing ran yet.</summary>
+    /// <summary>True before this pair has been read — the pickers are empty because nothing ran yet.</summary>
     public bool IsAwaitingCompare => _isStale;
 
     /// <summary>
-    /// Headline on the right of the filter strip, e.g.
-    /// "1690 attributes · 47 re-encode · 567 renamed only · 313 only in A · 505 only in B". Blank
-    /// until a map exists.
+    /// Headline on the right of the filter strip.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// "Re-encode" leads because it is the number somebody has to act on. Renames are reported
-    /// immediately after it and worded as "renamed only" so the two are never read as one figure:
-    /// counting a rename as work is what made the old headline useless on a large migration.
+    /// With both classes chosen it names the pairing and then the figures for it — "Aircraft →
+    /// FixedWingAircraft · 45 attributes · 3 re-encode · 12 renamed only · 1 only in A". Re-encode
+    /// leads because it is the number somebody has to act on; renames follow immediately and are
+    /// worded "renamed only" so the two are never read as one figure, since counting a rename as
+    /// work is what made the old headline useless on a large migration.
     /// </para>
     /// <para>
-    /// While a class is picked the line describes that class instead — "Aircraft · 45 attributes ·
-    /// 3 re-encode · 12 renamed only · 1 only in A" — because it is then the answer to the question
-    /// the user actually asked. A headline still quoting the whole FOM's totals beside a grid showing
-    /// one class would be read as that class's figures and be wrong by two orders of magnitude.
-    /// Zero segments are dropped there: most classes change in one way or none, and a line of zeroes
+    /// With one class chosen it says so plainly and offers no figures at all. Half a pairing has been
+    /// compared against nothing, and any number quoted there would be read as a result.
+    /// </para>
+    /// <para>
+    /// Zero segments are dropped: most class pairs change in one way or none, and a line of zeroes
     /// hides the one number that is not.
     /// </para>
     /// </remarks>
@@ -455,74 +590,62 @@ public sealed class AttributeMapViewModel : ViewModelBase
         get
         {
             if (Map is not { } map) return "";
-            if (SelectedObjectClass is { IsAll: false } scope) return ScopedSummary(map, scope);
 
             var total = map.Rows.Count;
-            var text = $"{total} attribute{Plural(total)} · " +
-                       $"{map.DataTypeChangedCount} re-encode · " +
-                       $"{map.RenamedCount} renamed only · " +
-                       $"{map.OnlyInLeftCount} only in A · {map.OnlyInRightCount} only in B";
 
-            // A moved attribute is still available on the class, so it is informational and only
-            // earns a place in the headline when there is actually one to report.
-            return map.MovedCount > 0 ? $"{text} · {map.MovedCount} moved" : text;
-        }
-    }
+            if (!map.ComparesBothSides)
+            {
+                var side = map.LeftClassName is not null ? LeafOf(map.LeftClassName) : LeafOf(map.RightClassName);
+                var waiting = map.LeftClassName is not null ? "nothing chosen in B" : "nothing chosen in A";
 
-    /// <summary>
-    /// The headline for one class: its name, its attribute count, and only those status counts that
-    /// are not zero, in the same order and wording the overall line uses.
-    /// </summary>
-    private static string ScopedSummary(AttributeDataMap map, ObjectClassOption scope)
-    {
-        var counts = new int[6];
-        var total = 0;
+                return $"{side} · {total} attribute{Plural(total)} · {waiting}";
+            }
 
-        foreach (var row in map.Rows)
-        {
-            if (!string.Equals(row.ClassName, scope.QualifiedName, StringComparison.Ordinal)) continue;
+            // Leaf names only: the paths are on screen in both pickers, and repeating
+            // "ObjectRoot.BaseEntity.PhysicalEntity.Platform." twice here would push the counts —
+            // the part being read — off the end of the strip.
+            var parts = new List<string>
+            {
+                $"{LeafOf(map.LeftClassName)} → {LeafOf(map.RightClassName)}",
+                $"{total} attribute{Plural(total)}",
+            };
 
-            total++;
-            var index = (int)row.Status;
-            if (index >= 0 && index < counts.Length) counts[index]++;
-        }
+            Add(map.DataTypeChangedCount, "re-encode");
+            Add(map.RenamedCount, "renamed only");
+            Add(map.OnlyInLeftCount, "only in A");
+            Add(map.OnlyInRightCount, "only in B");
+            Add(map.MovedCount, "moved");
 
-        // The leaf name alone: the path is on screen in the picker and in every row of the Class
-        // column, and repeating "ObjectRoot.BaseEntity.PhysicalEntity.Platform." here would push the
-        // counts — the part being read — off the end of the strip.
-        var parts = new List<string> { scope.LeafName, $"{total} attribute{Plural(total)}" };
+            return string.Join(" · ", parts);
 
-        Add(counts[(int)AttributeMapStatus.DataTypeChanged], "re-encode");
-        Add(counts[(int)AttributeMapStatus.Renamed], "renamed only");
-        Add(counts[(int)AttributeMapStatus.OnlyInLeft], "only in A");
-        Add(counts[(int)AttributeMapStatus.OnlyInRight], "only in B");
-        Add(counts[(int)AttributeMapStatus.Moved], "moved");
-
-        return string.Join(" · ", parts);
-
-        void Add(int count, string label)
-        {
-            if (count > 0) parts.Add($"{count} {label}");
+            void Add(int count, string label)
+            {
+                if (count > 0) parts.Add($"{count} {label}");
+            }
         }
     }
 
     /// <summary>Explains an empty grid — the reason differs and the user cannot be left guessing.</summary>
     public string EmptyMessage =>
         !HasPair ? "Choose FOM A and FOM B above to see which attributes carry data on each side."
-        : IsAwaitingCompare ? "Press Compare to map the attribute data for these two FOMs."
-        : Map is null ? "The attribute map could not be built from these two FOMs."
-        : Map.Rows.Count == 0 ? "Neither FOM declares or inherits a single object-class attribute."
+        : IsAwaitingCompare ? "Press Compare to read both FOMs and list their object classes."
+        : ClassOptionsA.Count == 0 && ClassOptionsB.Count == 0 ? "Neither FOM declares a single object class."
+        : Map is null && (HasClassA || HasClassB) ? "The attribute map could not be built for these two classes."
+        : !HasClassA && !HasClassB
+            ? "Pick a class in each FOM above to compare the attribute data they carry. "
+              + "The two do not have to be named the same."
+        : Map is null ? "The attribute map could not be built for these two classes."
+        : Map.Rows.Count == 0 ? "Neither class declares or inherits a single attribute."
         : "No attributes match the current filters.";
 
     /// <summary>
     /// True while the "Attribute data" tab is the visible one. Bound from the TabItem.
     /// </summary>
     /// <remarks>
-    /// Selection only — showing this tab does not build anything. The Compare screen fills all three
+    /// Selection only — showing this tab does not read anything. The Compare screen fills all three
     /// of its tabs in one pass, so that a single overlay covers the whole wait and every tab has its
-    /// data by the time it lifts. A tab that quietly built itself on arrival made a partial load look
-    /// like a complete one: the attribute map filled in, the class list stayed empty, and nothing on
-    /// screen distinguished "not loaded" from "nothing to show". See CompareViewModel.CompareAsync.
+    /// data by the time it lifts. A tab that quietly read itself on arrival made a partial load look
+    /// like a complete one. See CompareViewModel.CompareAsync.
     /// </remarks>
     public bool IsActive
     {
@@ -544,9 +667,9 @@ public sealed class AttributeMapViewModel : ViewModelBase
         LeftLabel = string.IsNullOrWhiteSpace(left?.DisplayName) ? DefaultLeftLabel : left!.DisplayName;
         RightLabel = string.IsNullOrWhiteSpace(right?.DisplayName) ? DefaultRightLabel : right!.DisplayName;
 
-        ClearMap();
+        ClearPair();
 
-        // Marked stale and left that way. Reading it costs two full document loads, and rebuilding
+        // Marked stale and left that way. Reading it costs two full document loads, and doing that
         // here would run once per picker — twice for a user setting both — for a result the next
         // Compare throws away. Compare is what fills this tab. See IsActive.
         _isStale = true;
@@ -558,8 +681,8 @@ public sealed class AttributeMapViewModel : ViewModelBase
     // ---- the datatype inspector ---------------------------------------------------------
 
     /// <summary>
-    /// True when there is a datatype on that side to open. A row that is only in one FOM has nothing
-    /// on the other, and a rebuild that failed has no resolver, so the cell stays plain text.
+    /// True when there is a datatype on that side to open. A row that is only in one class has
+    /// nothing on the other, and a failed load has no resolver, so the cell stays plain text.
     /// </summary>
     private bool CanShowDataType(AttributeMapRow? row, bool left)
     {
@@ -605,10 +728,11 @@ public sealed class AttributeMapViewModel : ViewModelBase
         }
     }
 
-    // ---- building ---------------------------------------------------------------------------
+    // ---- reading the pair --------------------------------------------------------------------
 
     /// <summary>
-    /// Selects this tab and builds its map, completing only once the rows are on screen.
+    /// Selects this tab, reads both FOMs and fills the two class pickers, completing only once the
+    /// screen has settled.
     /// </summary>
     /// <param name="showBusy">
     /// False when the caller already owns an overlay covering this view. The Compare screen's scrim
@@ -616,27 +740,26 @@ public sealed class AttributeMapViewModel : ViewModelBase
     /// the dimming, with the inner progress bar showing faintly through the outer one.
     /// </param>
     /// <remarks>
-    /// This is what the Compare button uses. Setting <see cref="IsActive"/> starts the same rebuild,
-    /// but as a task nobody holds, so the button's overlay would lift while the map was still being
-    /// built and leave the user watching empty columns fill themselves in.
+    /// This is what the Compare button uses. It deliberately does <b>not</b> pick a class: which two
+    /// classes to lay against each other is the judgement this screen exists to support, and
+    /// choosing one on the user's behalf would present a guess as an answer. What it does guarantee
+    /// is that the pickers are populated and any restored pair has finished comparing before the
+    /// caller's overlay lifts.
     /// </remarks>
     public async Task ActivateAsync(bool showBusy = true)
     {
         if (!_isActive)
         {
             // Written to the field rather than through the property: the setter would kick off the
-            // very fire-and-forget rebuild this method exists to await instead.
+            // very fire-and-forget work this method exists to await instead.
             _isActive = true;
             OnPropertyChanged(nameof(IsActive));
         }
 
         if (!_isStale)
         {
-            // Not stale does not mean not building. Changing a picker marks the map stale and, if
-            // this tab is already showing, starts the rebuild there and then — so a user who edits a
-            // picker and reaches straight for Compare arrives here with that rebuild still in flight.
-            // Returning now would lift the caller's overlay off a grid that is still empty, which is
-            // the one thing it is there to prevent. Waiting on a finished task costs nothing.
+            // Not stale does not mean not busy. Waiting on a finished task costs nothing, and
+            // returning early would lift the caller's overlay off a grid still filling itself in.
             await PendingWork.ConfigureAwait(true);
             return;
         }
@@ -644,43 +767,45 @@ public sealed class AttributeMapViewModel : ViewModelBase
         _isStale = false;
         RaiseRowState();
 
-        var rebuild = RebuildAsync(showBusy);
-        PendingWork = rebuild;
-        await rebuild.ConfigureAwait(true);
+        var work = LoadPairAsync(showBusy);
+        PendingWork = work;
+        await work.ConfigureAwait(true);
+
+        // The load may have restored a class pair, which schedules a comparison of its own.
+        await _compareChain.ConfigureAwait(true);
     }
 
     private void Refresh()
     {
         _isStale = false;
-        PendingWork = RebuildAsync(showBusy: true);
+        PendingWork = LoadPairAsync(showBusy: true);
     }
 
     /// <summary>
-    /// Loads both documents and maps them, off the UI thread.
+    /// Reads both documents and lists their object classes, off the UI thread.
     /// </summary>
     /// <remarks>
     /// <para>
     /// The load is two whole <c>FomDocument</c>s rebuilt out of SQLite — every class, attribute and
-    /// datatype row for both FOMs — and then the mapper walking them. Run inline it blocks the
-    /// dispatcher, which means the busy overlay it raises can never be painted: the flag goes up and
-    /// back down inside a single dispatcher turn, so WPF is never given a frame to draw it in. The
-    /// screen simply freezes, which on an RPR-sized pair lasts long enough to read as a hang. On a
-    /// worker thread the overlay paints, its bar keeps animating, and the freeze is gone.
+    /// datatype row for both FOMs. Run inline it blocks the dispatcher, which means the busy overlay
+    /// it raises can never be painted: the flag goes up and back down inside a single dispatcher
+    /// turn, so WPF is never given a frame to draw it in. The screen simply freezes, which on an
+    /// RPR-sized pair lasts long enough to read as a hang. On a worker thread the overlay paints,
+    /// its bar keeps animating, and the freeze is gone.
     /// </para>
     /// <para>
-    /// Only the read and the map go off-thread. The collections are filled back on the dispatcher in
-    /// one pass — required, since <see cref="ObservableCollection{T}"/> may not be touched from
-    /// anywhere else, and also what the user should see: the grid goes from empty to complete with no
-    /// half-populated state in between.
+    /// Both documents are then kept. Every subsequent class pick compares two already-loaded trees,
+    /// which is the difference between a wait the user notices and one they do not.
     /// </para>
     /// </remarks>
-    private async Task RebuildAsync(bool showBusy)
+    private async Task LoadPairAsync(bool showBusy)
     {
-        // Read before ClearMap empties the picker: a Refresh, or a rebuild after the options change,
-        // should leave the user looking at the same class rather than snapping back to the whole FOM.
-        var previousClass = SelectedObjectClass?.QualifiedName;
+        // Read before ClearPair empties the pickers: a Refresh, or a reload after the options
+        // change, should leave the user looking at the same two classes.
+        var previousA = SelectedClassA?.QualifiedName;
+        var previousB = SelectedClassB?.QualifiedName;
 
-        ClearMap();
+        ClearPair();
 
         if (_leftId is not { } leftId || _rightId is not { } rightId)
         {
@@ -688,61 +813,65 @@ public sealed class AttributeMapViewModel : ViewModelBase
             return;
         }
 
-        // Stamped before the await, checked after it. Changing a picker mid-build starts a second
-        // rebuild, and without this the slower of the two wins: the screen ends up showing a full,
-        // plausible-looking map of a pair the user has already moved off, with nothing saying so.
+        // Stamped before the await, checked after it. Changing a picker mid-load starts a second
+        // load, and without this the slower of the two wins: the screen ends up showing a full,
+        // plausible-looking inventory of a pair the user has already moved off.
         var generation = ++_generation;
 
         // Cloned for the reason the Compare screen clones its own: the options are bound to live
-        // controls, and the worker has to map against the settings in force when it started.
+        // controls, and the worker has to read against the settings in force when it started.
         var options = Options.Clone();
 
-        var busy = showBusy ? BeginBusy("Mapping attribute data…") : null;
+        var busy = showBusy ? BeginBusy("Reading both FOMs…") : null;
         try
         {
-            var built = await Task.Run(() =>
+            var loaded = await Task.Run(() =>
             {
                 var left = _repository.LoadDocument(leftId);
                 var right = _repository.LoadDocument(rightId);
 
                 // The resolvers are built here rather than on demand: both documents are already in
                 // hand, and this is the only point at which they are.
-                return (Map: AttributeMapper.Build(left, right, options),
+                return (Left: left,
+                        Right: right,
+                        ClassesLeft: AttributeMapper.ListClasses(left, options),
+                        ClassesRight: AttributeMapper.ListClasses(right, options),
                         LeftResolver: new DataTypeResolver(left),
                         RightResolver: new DataTypeResolver(right));
             }).ConfigureAwait(true);
 
             if (generation != _generation) return;
 
-            var map = built.Map;
-            Map = map;
-            _leftResolver = built.LeftResolver;
-            _rightResolver = built.RightResolver;
+            _leftDocument = loaded.Left;
+            _rightDocument = loaded.Right;
+            _leftResolver = loaded.LeftResolver;
+            _rightResolver = loaded.RightResolver;
 
-            foreach (var advisory in map.Advisories)
-                Advisories.Add(advisory);
+            foreach (var summary in loaded.ClassesLeft)
+                ClassOptionsA.Add(ObjectClassOption.ForClass(summary));
 
-            RebuildObjectClasses(previousClass);
-            ApplyFilter();
+            foreach (var summary in loaded.ClassesRight)
+                ClassOptionsB.Add(ObjectClassOption.ForClass(summary));
 
-            StatusMessage = map.ActionableCount == 0
-                ? "Attribute data lines up in both FOMs"
-                : $"{map.ActionableCount} attribute{Plural(map.ActionableCount)} " +
-                  $"need{(map.ActionableCount == 1 ? "s" : "")} remapping";
+            ClassesA.Refresh();
+            ClassesB.Refresh();
+
+            StatusMessage =
+                $"{ClassOptionsA.Count} class{(ClassOptionsA.Count == 1 ? "" : "es")} in A, " +
+                $"{ClassOptionsB.Count} in B — pick one on each side";
+
+            RestoreSelection(previousA, previousB);
         }
         catch (Exception ex)
         {
-            // A superseded rebuild fails quietly. Its pair is no longer on screen, so a dialog about
-            // it would name two FOMs the user has already moved off.
+            // A superseded load fails quietly. Its pair is no longer on screen, so a dialog about it
+            // would name two FOMs the user has already moved off.
             if (generation != _generation) return;
 
-            // A map that cannot be built leaves the strip and the empty state usable rather than
-            // taking the shell down; EmptyMessage explains what happened.
-            Map = null;
-            RebuildObjectClasses(null);
+            ClearPair();
             RaiseRowState();
             _dialogs.ShowError("Attribute data",
-                $"The attribute map could not be built for these two FOMs.\n\n{ex.Message}");
+                $"The object classes could not be read for these two FOMs.\n\n{ex.Message}");
         }
         finally
         {
@@ -750,81 +879,192 @@ public sealed class AttributeMapViewModel : ViewModelBase
         }
     }
 
-    private void ClearMap()
+    /// <summary>
+    /// Puts the user back on the two classes they were looking at, where those classes still exist.
+    /// </summary>
+    /// <remarks>
+    /// Written through the fields rather than the properties, so the two sides do not fire a
+    /// comparison each. One is scheduled at the end, against the pair as a whole.
+    /// </remarks>
+    private void RestoreSelection(string? previousA, string? previousB)
+    {
+        _selectedClassA = Find(ClassOptionsA, previousA);
+        _selectedClassB = Find(ClassOptionsB, previousB);
+
+        ClassesA.Refresh();
+        ClassesB.Refresh();
+
+        OnPropertyChanged(nameof(SelectedClassA), nameof(SelectedClassB),
+            nameof(HasClassA), nameof(HasClassB), nameof(Summary));
+
+        ClearClassACommand.RaiseCanExecuteChanged();
+        ClearClassBCommand.RaiseCanExecuteChanged();
+
+        if (_selectedClassA is not null || _selectedClassB is not null) ScheduleCompare();
+        else RaiseRowState();
+
+        static ObjectClassOption? Find(IEnumerable<ObjectClassOption> options, string? qualifiedName) =>
+            qualifiedName is null
+                ? null
+                : options.FirstOrDefault(
+                    option => string.Equals(option.QualifiedName, qualifiedName, StringComparison.Ordinal));
+    }
+
+    private void ClearPair()
     {
         Map = null;
 
-        // Dropped with the map they describe: a resolver kept past its pair would answer for the
-        // wrong FOM, which is worse than answering not at all.
+        _leftDocument = null;
+        _rightDocument = null;
+
+        // Dropped with the documents they describe: a resolver kept past its pair would answer for
+        // the wrong FOM, which is worse than answering not at all.
         _leftResolver = null;
         _rightResolver = null;
 
         Rows.Clear();
         Advisories.Clear();
         SelectedRow = null;
-        RebuildObjectClasses(null);
+
+        ClassOptionsA.Clear();
+        ClassOptionsB.Clear();
+
+        _selectedClassA = null;
+        _selectedClassB = null;
+
+        ClassesA.Refresh();
+        ClassesB.Refresh();
+
+        OnPropertyChanged(nameof(SelectedClassA), nameof(SelectedClassB),
+            nameof(HasClassA), nameof(HasClassB), nameof(ComparesBothSides));
+
+        ClearClassACommand.RaiseCanExecuteChanged();
+        ClearClassBCommand.RaiseCanExecuteChanged();
+    }
+
+    // ---- comparing ---------------------------------------------------------------------------
+
+    /// <summary>Queues a comparison of the two currently chosen classes.</summary>
+    private void ScheduleCompare()
+    {
+        var generation = ++_compareGeneration;
+        _compareChain = CompareAsync(_compareChain, generation);
+        PendingWork = _compareChain;
     }
 
     /// <summary>
-    /// Repopulates the picker from the current map, keeping <paramref name="preferredClass"/>
-    /// selected when that class still exists and falling back to "All classes" when it does not.
+    /// Compares the two chosen classes, off the UI thread, after whatever comparison was already in
+    /// flight has finished.
     /// </summary>
-    /// <remarks>
-    /// The selection is written to the field rather than through the property. The picker is being
-    /// emptied and refilled either side of this, and routing through the setter would re-filter the
-    /// grid against a half-built list — once for the clear and once for the restore — in the middle
-    /// of a rebuild that calls <see cref="ApplyFilter"/> itself immediately afterwards.
-    /// </remarks>
-    private void RebuildObjectClasses(string? preferredClass)
+    /// <param name="previous">The comparison this one queues behind.</param>
+    /// <param name="generation">
+    /// Stamped when this comparison was asked for. Any later pick makes it stale, and a stale
+    /// comparison must never paint: the grid would end up showing a full, plausible-looking map of a
+    /// pairing the user has already moved off, with nothing on screen saying so.
+    /// </param>
+    private async Task CompareAsync(Task previous, int generation)
     {
-        ObjectClasses.Clear();
-
-        if (Map is { } map)
+        // The predecessor's own outcome is not this comparison's business; its failure was already
+        // reported to the user by the run that owned it.
+        try
         {
-            // Counted in one pass, in first-appearance order: that is the mapper's left-document tree
-            // order, and a Dictionary alone would not preserve it.
-            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-            var order = new List<string>();
-
-            foreach (var row in map.Rows)
-            {
-                if (counts.TryGetValue(row.ClassName, out var seen))
-                {
-                    counts[row.ClassName] = seen + 1;
-                }
-                else
-                {
-                    counts[row.ClassName] = 1;
-                    order.Add(row.ClassName);
-                }
-            }
-
-            ObjectClasses.Add(ObjectClassOption.All(map.Rows.Count));
-
-            foreach (var className in order)
-                ObjectClasses.Add(ObjectClassOption.ForClass(className, counts[className]));
+            await previous.ConfigureAwait(true);
+        }
+        catch (Exception)
+        {
+            // Deliberately swallowed — see above.
         }
 
-        var restored = preferredClass is null
-            ? null
-            : ObjectClasses.FirstOrDefault(
-                option => !option.IsAll &&
-                          string.Equals(option.QualifiedName, preferredClass, StringComparison.Ordinal));
+        if (generation != _compareGeneration) return;
 
-        // FirstOrDefault is the sentinel when the list has one, and null when there is no map at all.
-        _selectedObjectClass = restored ?? ObjectClasses.FirstOrDefault();
+        var leftName = _selectedClassA?.QualifiedName;
+        var rightName = _selectedClassB?.QualifiedName;
 
-        OnPropertyChanged(nameof(SelectedObjectClass), nameof(IsClassScoped), nameof(Summary));
-        ClearClassScopeCommand.RaiseCanExecuteChanged();
+        if (_leftDocument is not { } left || _rightDocument is not { } right ||
+            (leftName is null && rightName is null))
+        {
+            Map = null;
+            Rows.Clear();
+            Advisories.Clear();
+            SelectedRow = null;
+            RaiseRowState();
+            return;
+        }
+
+        var options = Options.Clone();
+
+        // Armed rather than raised. Two already-loaded classes compare in well under a millisecond,
+        // so this all but never paints; it is here for the pathological FOM where it would.
+        using var busy = BeginBusyAfter(DescribeCompare(leftName, rightName));
+
+        try
+        {
+            var built = await Task.Run(
+                () => AttributeMapper.BuildForClasses(left, right, leftName, rightName, options))
+                .ConfigureAwait(true);
+
+            if (generation != _compareGeneration) return;
+
+            Map = built;
+
+            Advisories.Clear();
+            foreach (var advisory in built.Advisories)
+                Advisories.Add(advisory);
+
+            ApplyFilter();
+
+            StatusMessage = !built.ComparesBothSides
+                ? $"{built.Rows.Count} attribute{Plural(built.Rows.Count)} listed — " +
+                  $"pick a class on the other side to compare"
+                : built.ActionableCount == 0
+                    ? "Attribute data lines up on both sides"
+                    : $"{built.ActionableCount} attribute{Plural(built.ActionableCount)} " +
+                      $"need{(built.ActionableCount == 1 ? "s" : "")} remapping";
+        }
+        catch (Exception ex)
+        {
+            if (generation != _compareGeneration) return;
+
+            // A comparison that cannot be built leaves the strip and the empty state usable rather
+            // than taking the shell down; EmptyMessage explains what happened.
+            Map = null;
+            Rows.Clear();
+            SelectedRow = null;
+            RaiseRowState();
+            _dialogs.ShowError("Attribute data",
+                $"The attribute map could not be built for these two classes.\n\n{ex.Message}");
+        }
     }
 
-    private void ClearClassScope()
+    /// <summary>What the overlay would say, on the rare occasion it appears.</summary>
+    private string DescribeCompare(string? leftName, string? rightName) =>
+        leftName is not null && rightName is not null
+            ? $"Comparing {LeafOf(leftName)} against {LeafOf(rightName)}…"
+            : $"Listing {LeafOf(leftName ?? rightName)}…";
+
+    // ---- picker filtering ---------------------------------------------------------------------
+
+    private bool PassesA(object item) => Passes(item, _selectedClassA, _classFilterA);
+
+    private bool PassesB(object item) => Passes(item, _selectedClassB, _classFilterB);
+
+    /// <summary>
+    /// Whether one class survives what has been typed into its picker.
+    /// </summary>
+    /// <remarks>
+    /// The current selection is <b>always</b> admitted. That single rule is what makes a filtered
+    /// ComboBox usable: WPF's Selector drops <c>SelectedItem</c> the instant the selected item
+    /// leaves the items collection, and the ComboBox then rewrites its editable text box from the
+    /// now-null selection, deleting the word the user is halfway through typing.
+    /// </remarks>
+    private static bool Passes(object item, ObjectClassOption? selected, string filter)
     {
-        var all = ObjectClasses.FirstOrDefault(option => option.IsAll);
-        if (all is not null) SelectedObjectClass = all;
+        if (item is not ObjectClassOption option) return false;
+
+        return (selected is not null && ReferenceEquals(option, selected)) || option.Matches(filter);
     }
 
-    // ---- filtering --------------------------------------------------------------------------
+    // ---- row filtering --------------------------------------------------------------------
 
     private void ApplyFilter()
     {
@@ -850,15 +1090,14 @@ public sealed class AttributeMapViewModel : ViewModelBase
 
     private bool Matches(AttributeMapRow row)
     {
-        // The class scope narrows before anything else and composes with the rest: picking Aircraft
-        // and then unticking "Renamed" asks for Aircraft's attributes minus the renames, not for a
-        // fresh start. Ordinal, because these names came from the map itself — nothing to fold.
-        if (SelectedObjectClass is { IsAll: false } scope &&
-            !string.Equals(row.ClassName, scope.QualifiedName, StringComparison.Ordinal)) return false;
-
         // A rename is filtered out here rather than by its own toggle, because "needs attention" is
         // a statement about work and a renamed datatype is none: the bits on the wire are unchanged.
-        if (OnlyDifferences && !NeedsAttention(row)) return false;
+        //
+        // Inert while only one class is chosen. "Needs attention" is a statement about a comparison,
+        // and there has not been one — applying it would empty the grid of a class the user has just
+        // asked to see and blame it on a filter.
+        if (OnlyDifferences && Map is { ComparesBothSides: true } && !NeedsAttention(row)) return false;
+
         if (!IsKindVisible(row.Status)) return false;
         if (string.IsNullOrWhiteSpace(SearchText)) return true;
 
@@ -866,11 +1105,11 @@ public sealed class AttributeMapViewModel : ViewModelBase
 
         // Declared-in and Note are excluded on purpose: the search box is how a user finds one
         // attribute or one encoding, and matching the owning class of every inherited attribute would
-        // return most of the FOM for a common ancestor name. The resolved encodings are searchable so
-        // that a canonical form such as "uint:32" gathers every attribute carrying those bits,
+        // return most of the class for a common ancestor name. The resolved encodings are searchable
+        // so that a canonical form such as "uint:32" gathers every attribute carrying those bits,
         // whatever the two FOMs happen to call the type.
-        return Contains(row.ClassName, needle)
-            || Contains(row.AttributeName, needle)
+        return Contains(row.AttributeName, needle)
+            || Contains(row.RightAttributeName, needle)
             || Contains(row.LeftDataType, needle)
             || Contains(row.RightDataType, needle)
             || Contains(row.LeftEncoding, needle)
@@ -885,6 +1124,10 @@ public sealed class AttributeMapViewModel : ViewModelBase
     private static bool NeedsAttention(AttributeMapRow row) =>
         row.IsDifferent && row.Status != AttributeMapStatus.Renamed;
 
+    /// <summary>
+    /// Whether the chips admit a status. Unpaired has no chip and answers true through the default
+    /// arm: it is the state of a half-made choice rather than a kind of finding.
+    /// </summary>
     private bool IsKindVisible(AttributeMapStatus status) => status switch
     {
         AttributeMapStatus.Same => ShowSame,
@@ -901,34 +1144,67 @@ public sealed class AttributeMapViewModel : ViewModelBase
 
     private void RaiseRowState()
     {
-        OnPropertyChanged(nameof(HasRows), nameof(EmptyMessage), nameof(IsAwaitingCompare));
-        ExportCsvCommand.RaiseCanExecuteChanged();
+        OnPropertyChanged(nameof(HasRows), nameof(EmptyMessage), nameof(IsAwaitingCompare),
+            nameof(Summary), nameof(ComparesBothSides));
+        ExportCommand.RaiseCanExecuteChanged();
     }
 
-    // ---- CSV export -------------------------------------------------------------------------
-
-    private void ExportCsv()
+    /// <summary>The segment after the last dot, for a headline that has no room for the path.</summary>
+    private static string LeafOf(string? qualifiedName)
     {
-        if (Map is null || Rows.Count == 0) return;
+        if (string.IsNullOrEmpty(qualifiedName)) return "";
+
+        var lastDot = qualifiedName.LastIndexOf('.');
+        return lastDot >= 0 && lastDot < qualifiedName.Length - 1
+            ? qualifiedName[(lastDot + 1)..]
+            : qualifiedName;
+    }
+
+    // ---- the worksheet ----------------------------------------------------------------------
+
+    /// <summary>
+    /// Writes the visible rows as the leveled, side-by-side Excel worksheet.
+    /// </summary>
+    /// <remarks>
+    /// The filtered view is written, not the whole map: this file is the remap worksheet somebody
+    /// works through, so it holds exactly the rows they narrowed the screen down to. Each row is then
+    /// unfolded through the structure of its datatype, which is the half of the answer the grid has
+    /// no room for — the grid says an attribute re-encodes, the sheet says which field of it does.
+    /// </remarks>
+    private void ExportWorkbook()
+    {
+        if (Map is not { } map || Rows.Count == 0) return;
+        if (_leftDocument is not { } left || _rightDocument is not { } right) return;
+
+        // Named after the two classes rather than the two FOMs: the sheet is one class pair, and on a
+        // run of exports from the same pair of FOMs the FOM names would make every file alike.
+        var suggested = map.ComparesBothSides
+            ? $"{LeafOf(map.LeftClassName)}-to-{LeafOf(map.RightClassName)}-attributes"
+            : $"{LeafOf(map.LeftClassName ?? map.RightClassName)}-attributes";
 
         var path = _dialogs.SaveFile(
-            "Export attribute map",
-            "CSV files|*.csv|All files|*.*",
-            $"{Sanitize($"{LeftLabel}-to-{RightLabel}-attribute-map")}.csv",
-            "csv");
+            "Export attribute worksheet",
+            "Excel workbook|*.xlsx|All files|*.*",
+            $"{Sanitize(suggested)}.xlsx",
+            "xlsx");
 
         if (string.IsNullOrWhiteSpace(path)) return;
 
         try
         {
-            // The filtered view is written, not the whole map: this file is the remap worksheet
-            // somebody works through, so it should hold exactly the rows they narrowed the screen
-            // down to. The Status column keeps it readable without the filter settings.
-            File.WriteAllText(path, BuildCsv(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            var sheet = AttributePairExporter.Build(
+                map, Rows.ToList(), left, right,
+                new AttributePairSheetOptions { Comparison = Options.Clone() });
 
-            StatusMessage = $"Attribute map written to {Path.GetFileName(path)}";
+            AttributePairExporter.WriteXlsx(sheet, path);
+
+            var expanded = sheet.Rows.Count - Rows.Count;
+
+            StatusMessage = $"Attribute worksheet written to {Path.GetFileName(path)}";
             _dialogs.ShowInfo("Export complete",
-                $"{Rows.Count} attribute{Plural(Rows.Count)} written to:\n\n{path}");
+                $"{Rows.Count} attribute{Plural(Rows.Count)}" +
+                (expanded > 0 ? $", unfolded to {sheet.Rows.Count} rows," : "") +
+                $" written to:\n\n{path}");
         }
         catch (Exception ex)
         {
@@ -937,60 +1213,10 @@ public sealed class AttributeMapViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Renders the visible rows as RFC 4180 CSV — CRLF line endings, quoting only where the format
-    /// requires it — so the worksheet opens in a spreadsheet without a parsing step.
-    /// </summary>
-    private string BuildCsv()
-    {
-        var builder = new StringBuilder();
-
-        // Each encoding sits beside the datatype name it resolves to, so a reader sorting or
-        // filtering the sheet can tell a rename from a re-encode without trusting the Status column.
-        builder.Append("Class,Attribute,Status,DeclaredInA,DataTypeA,EncodingA," +
-                       "DeclaredInB,DataTypeB,EncodingB,Note\r\n");
-
-        foreach (var row in Rows)
-        {
-            builder.Append(Quote(row.ClassName)).Append(',')
-                   .Append(Quote(row.AttributeName)).Append(',')
-                   .Append(Quote(StatusLabel(row.Status))).Append(',')
-                   .Append(Quote(row.LeftDeclaredIn)).Append(',')
-                   .Append(Quote(row.LeftDataType)).Append(',')
-                   .Append(Quote(row.LeftEncoding)).Append(',')
-                   .Append(Quote(row.RightDeclaredIn)).Append(',')
-                   .Append(Quote(row.RightDataType)).Append(',')
-                   .Append(Quote(row.RightEncoding)).Append(',')
-                   .Append(Quote(row.Note)).Append("\r\n");
-        }
-
-        return builder.ToString();
-    }
-
-    /// <summary>
     /// The wording used for a status wherever it is shown to a person — badge, chip and export
     /// column alike, so a CSV reader and a screen reader see the same words.
     /// </summary>
-    public static string StatusLabel(AttributeMapStatus status) => status switch
-    {
-        AttributeMapStatus.Same => "Same",
-        AttributeMapStatus.DataTypeChanged => "Changed",
-        // A rename needs no conversion, so it reads as Same everywhere the user sees it —
-        // badge, chip and CSV alike. The datatype columns still show the two names.
-        AttributeMapStatus.Renamed => "Same",
-        AttributeMapStatus.Moved => "Moved",
-        AttributeMapStatus.OnlyInLeft => "Only in A",
-        AttributeMapStatus.OnlyInRight => "Only in B",
-        _ => "",
-    };
-
-    /// <summary>Quotes a field only when RFC 4180 requires it, doubling any embedded quote.</summary>
-    private static string Quote(string? value)
-    {
-        if (string.IsNullOrEmpty(value)) return "";
-
-        var needsQuotes = value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) >= 0;
-        return needsQuotes ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
-    }
+    public static string StatusLabel(AttributeMapStatus status) => AttributeMapStatusText.Label(status);
 
     private static string Sanitize(string name)
     {

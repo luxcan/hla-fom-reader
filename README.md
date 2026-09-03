@@ -152,19 +152,54 @@ Pick two registered FOMs once at the top. All three tabs below work from that pa
 
 #### Attribute data — the tab to start with
 
-This is the remapping view, and the one to use when the question is *what data moves*. One row per
-attribute a class really has — inherited ones included — with its datatype on each side:
+This is the remapping view, and the one to use when the question is *what data moves*.
+
+**Pick one class in each FOM.** The two pickers at the top are independent, and that is the point:
+across a version step the counterpart of a class is rarely the same name. RPR 2.0 reworks the
+hierarchy RPR 1.0 declared, so deciding that its `Aircraft` is what your old class becomes is a
+judgement only you can make — the screen is there to let you make it and then read the consequences.
+Type any part of a name to narrow a picker; the number on the right of each row is how many
+attributes that class carries, inherited ones included.
+
+Choosing a class on **one** side lists what it carries with the other columns blank, so you can read
+a class on its own before choosing its counterpart. Nothing is reported as missing until there is
+something to compare against. Once both sides are chosen you get one row per attribute:
 
 | Status | What it means for you |
 | --- | --- |
 | Same | Same attribute, same bytes. Nothing to do. |
 | Renamed | The datatype has a different **name** but the **same bytes**. Nothing to convert. |
 | **Changed** | The bytes genuinely differ. **This is the work.** |
-| Moved | Same attribute, same bytes, declared somewhere else in the family tree. Inheritance means it is still there. |
+| Moved | Same attribute, same bytes, declared somewhere else in the family tree. Inheritance means it is still there. Only ever shown when both sides picked the same class — across two classes you paired by hand, a different declaring ancestor *is* the pairing rather than a finding. |
 | Only in A / Only in B | Data with nowhere to go, or nothing to fill it. |
 
-**Export CSV…** writes the visible rows as a remap worksheet:
-`Class,Attribute,Status,DeclaredInA,DataTypeA,DeclaredInB,DataTypeB,Note`.
+**Export Excel…** writes the visible rows as a side-by-side worksheet. Each FOM gets its own
+staircase — a name sits in the column matching its depth, so the attribute is in **Level 1**, its
+record's fields in **Level 2** and the fields inside those in **Level 3**, exactly as the class
+hierarchy sheet lays out a class tree. The datatype and its resolved encoding follow each staircase,
+and two empty columns separate FOM A's half from FOM B's:
+
+```
+FOM A · RPR 1.0 · ObjectRoot…Aircraft            FOM B · RPR 2.0 · …FixedWingAircraft
+Level 1     Level 2    DataType    Encoding      Level 1     Level 2    DataType   Encoding
+accelerationVector                 AccVecStruct  record(…)   AccelerationVector    AccelerationVectorStruct  record(…)
+            XAcceleration          float32       float:32                X         float32    float:32
+```
+
+The two halves share their rows, so the fold down the middle of the sheet *is* the comparison: read
+across a row to see whether the same bytes arrive on the other side, and down a level to see where
+inside a record they stop agreeing. Where one side has an attribute the other does not, that side's
+**Level 1** cell reads `Attribute not found` and the rest of its half stays blank. With a class
+chosen on only one side nothing is marked missing at all — nothing was looked for.
+
+Nested fields are lined up **by name first**, then — for record fields only — **by position**, because
+field order is what places the bytes. A pairing inferred from position always says so in the **Note**
+column, so you can tell what the FOM asserts from what the sheet worked out. A version step that
+renames `X`/`Y`/`Z` to `XPos`/`YPos`/`ZPos` still lines up, and still tells you it guessed. The Note
+column also carries the reason wherever the walk stopped early.
+
+Enumerator values and a simple type's representation are left out: the attribute's own Encoding
+column already *is* the representation, and one RPR enumeration can declare hundreds of values.
 
 <details>
 <summary><b>Why it compares bytes instead of names</b></summary>
